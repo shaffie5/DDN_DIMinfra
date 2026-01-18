@@ -1,0 +1,9 @@
+streamlit>=1.31
+pandas>=2.0
+openpyxl>=3.1
+pillow>=10.0
+streamlit-drawable-canvas>=0.9
+streamlit-folium>=0.20
+folium>=0.15
+geopy>=2.4
+streamlit-js-eval>=0.1
