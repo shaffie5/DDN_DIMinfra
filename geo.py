@@ -58,3 +58,33 @@ def osrm_route_km(a: GeoPoint, b: GeoPoint, timeout_s: float = 10.0) -> tuple[fl
         return dist_km, dur_min
     except Exception:
         return None
+
+
+def osrm_route_geometry(
+    a: GeoPoint, b: GeoPoint, timeout_s: float = 10.0,
+) -> list[tuple[float, float]] | None:
+    """Return the full driving route as a list of (lat, lon) waypoints.
+
+    Uses the public OSRM demo server with full geometry.
+    Returns None on failure.
+    """
+    if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
+        return None
+
+    url = (
+        "https://router.project-osrm.org/route/v1/driving/"
+        f"{a.lon},{a.lat};{b.lon},{b.lat}"
+        "?overview=full&geometries=geojson&alternatives=false&steps=false"
+    )
+    try:
+        resp = requests.get(url, timeout=timeout_s)
+        resp.raise_for_status()
+        data: dict[str, Any] = resp.json()
+        routes = data.get("routes")
+        if not routes:
+            return None
+        coords = routes[0]["geometry"]["coordinates"]
+        # OSRM returns [lon, lat]; convert to [lat, lon] for folium
+        return [(float(c[1]), float(c[0])) for c in coords]
+    except Exception:
+        return None
