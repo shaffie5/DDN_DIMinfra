@@ -1136,6 +1136,9 @@ def page_create_note() -> None:
     # ════════════════════════════════════════════════════════════════════
     #  RELEASE — Summary + Action
     # ════════════════════════════════════════════════════════════════════
+    EM_DASH = "—"
+    WARNING_TEXT = "⚠️ Niet ingesteld"
+
     st.markdown("")
     _section_heading("\U0001f680", "Leveringsbon Vrijgeven",
                      "Bekijk de samenvatting en geef vrij")
@@ -1152,9 +1155,9 @@ def page_create_note() -> None:
         ] if e.strip()
     )
     summary_items = [
-        f"<b>DDN:</b> {ddn or '\u26a0\ufe0f Niet ingesteld'}",
-        f"<b>Product:</b> {product_val or '\u2014'}",
-        f"<b>Netto:</b> {net_val:.2f} ton" if net_val else "<b>Netto:</b> \u2014",
+        f"<b>DDN:</b> {ddn or WARNING_TEXT}",
+        f"<b>Product:</b> {product_val or EM_DASH}",
+        f"<b>Netto:</b> {net_val:.2f} ton" if net_val else f"<b>Netto:</b> {EM_DASH}",
         f"<b>Afstand:</b> {distance_km:.1f} km",
         f"<b>Ontvangers:</b> {recipient_count}",
     ]
@@ -1590,31 +1593,26 @@ def page_sign(note_id: str, role: str) -> None:
                 text=f"Handtekeningen: {signed_count} / {total}")
 
     # Compact summary card
-    with st.expander("\U0001f4cb Samenvatting leveringsbon", expanded=False):
+    EM_DASH = "—"
+
+    with st.expander("📋 Samenvatting leveringsbon", expanded=False):
         s1, s2 = st.columns(2)
+
         with s1:
-            st.markdown(f"**Datum:** {payload.get('date', '\u2014')}")
-            st.markdown(
-                f"**DDN:** {payload.get('delivery_note_no', '\u2014')}")
-            st.markdown(
-                f"**Centrale:** {payload.get('plant_address', '\u2014')}")
-            st.markdown(
-                f"**Werf:** {payload.get('site_address', '\u2014')}")
-            st.markdown(
-                f"**Transport:** {payload.get('transport_company', '\u2014')}")
+            st.markdown(f"**Datum:** {payload.get('date', EM_DASH)}")
+            st.markdown(f"**DDN:** {payload.get('delivery_note_no', EM_DASH)}")
+            st.markdown(f"**Centrale:** {payload.get('plant_address', EM_DASH)}")
+            st.markdown(f"**Werf:** {payload.get('site_address', EM_DASH)}")
+            st.markdown(f"**Transport:** {payload.get('transport_company', EM_DASH)}")
+
         with s2:
+            st.markdown(f"**Nummerplaat:** {payload.get('license_plate', EM_DASH)}")
+            st.markdown(f"**Vertrek:** {payload.get('departure_time', EM_DASH)}")
+            st.markdown(f"**Aankomst:** {payload.get('arrival_time', EM_DASH)}")
+            st.markdown(f"**Product:** {payload.get('product_mixture_type', EM_DASH)}")
             st.markdown(
-                f"**Nummerplaat:** {payload.get('license_plate', '\u2014')}")
-            st.markdown(
-                f"**Vertrek:** {payload.get('departure_time', '\u2014')}")
-            st.markdown(
-                f"**Aankomst:** {payload.get('arrival_time', '\u2014')}")
-            st.markdown(
-                f"**Product:** "
-                f"{payload.get('product_mixture_type', '\u2014')}")
-            st.markdown(
-                f"**Netto hvh:** "
-                f"{payload.get('net_total_quantity_ton', '\u2014')} ton")
+                f"**Netto hvh:** {payload.get('net_total_quantity_ton', EM_DASH)} ton"
+            )
 
     # Signature canvas
     st.markdown("")
