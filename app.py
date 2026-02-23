@@ -19,9 +19,10 @@ from streamlit_js_eval import get_geolocation
 import excel_export
 import geo
 import mailer
+import ocr
 import storage
 
-APP_TITLE = "Digital Delivery Note"
+APP_TITLE = "Digitale Leveringsbon"
 
 LOGOS_DIR = Path(__file__).resolve().parent / "data" / "logos"
 LOGO_FILES = [
@@ -108,16 +109,16 @@ def _stepper(steps: list[tuple[str, str]], active: int) -> None:
 def _workflow_steps() -> None:
     """Render the 4-step horizontal workflow on the home page."""
     data = [
-        ("\U0001f3ed", "Asphalt Plant",
-         "Create & release the delivery note with product, route and compliance data"),
+        ("\U0001f3ed", "Asfaltcentrale",
+         "Maak en geef de leveringsbon vrij met product-, route- en conformiteitsgegevens"),
         ("\U0001f69b", "Transport",
-         "Truck departs — departure time and route are automatically recorded"),
-        ("\U0001f3d7\ufe0f", "Site Delivery",
-         "Site supervisor receives the truck and confirms arrival time"),
-        ("\u270d\ufe0f", "Signatures",
-         "All parties sign digitally — Excel report generated automatically"),
+         "Vrachtwagen vertrekt — vertrektijd en route worden automatisch geregistreerd"),
+        ("\U0001f3d7\ufe0f", "Levering op werf",
+         "Werftoezichter ontvangt de vrachtwagen en bevestigt de aankomsttijd"),
+        ("\u270d\ufe0f", "Handtekeningen",
+         "Alle partijen tekenen digitaal — Excel-rapport wordt automatisch gegenereerd"),
         ("\U0001f4ca", "GPP Tool",
-         "Data flows into the Excel-based GPP planning tool for environmental Impact calculation"),
+         "Gegevens vloeien in de Excel-gebaseerde GPP-planningstool voor milieu-impactberekening"),
     ]
     cols = st.columns(len(data))
     for i, (icon, title, desc) in enumerate(data):
@@ -129,7 +130,7 @@ def _workflow_steps() -> None:
                 f'display:flex;flex-direction:column;align-items:center;justify-content:flex-start;">'
                 f'<div style="font-size:2rem;margin-bottom:8px;">{icon}</div>'
                 f'<div style="font-size:0.95rem;font-weight:700;color:#1e293b;margin-bottom:6px;">'
-                f'Step {i + 1}: {title}</div>'
+                f'Stap {i + 1}: {title}</div>'
                 f'<div style="font-size:0.78rem;color:#64748b;line-height:1.4;">{desc}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
@@ -146,7 +147,7 @@ def _location_card(label: str, icon: str, address: str, lat: float, lon: float) 
         f'<div style="font-size:0.82rem;font-weight:700;color:#334155;'
         f'text-transform:uppercase;letter-spacing:0.5px;">{label}</div>'
         f'<div style="font-size:0.88rem;color:#1e293b;margin-top:2px;">'
-        f'{addr_display or "Not set"}</div>'
+        f'{addr_display or "Niet ingesteld"}</div>'
         f'<div style="font-size:0.72rem;color:#94a3b8;margin-top:2px;">'
         f'{lat:.4f}, {lon:.4f}</div>'
         f'</div></div>',
@@ -179,9 +180,9 @@ def _render_branded_header() -> None:
     st.markdown(
         '<div style="text-align:center;padding:20px 0 6px 0;">'
         '<div style="font-size:2rem;font-weight:800;color:#0f172a;letter-spacing:-0.5px;">'
-        '\U0001f4cb Digital Delivery Note</div>'
+        '\U0001f4cb Digitale Leveringsbon</div>'
         '<div style="font-size:0.88rem;color:#64748b;margin-top:4px;">'
-        'DIMinfr@ \u2014 Digitising infrastructure delivery workflows</div>'
+        'DIMinfr@ \u2014 Digitalisering van leveringsprocessen in de infrastructuur</div>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -269,10 +270,10 @@ def _inject_custom_css() -> None:
 # ═══════════════════════════════════════════════════════════════════════
 
 ROLE_LABELS = {
-    "client": "Client",
-    "transporter": "Transporter",
+    "client": "Opdrachtgever",
+    "transporter": "Vervoerder",
     "copro": "COPRO",
-    "permit_holder": "Permit holder",
+    "permit_holder": "Vergunninghouder",
 }
 
 ENERGY_SOURCES = ["Diesel", "Biodiesel", "Electric", "Electric_green"]
@@ -416,13 +417,13 @@ def _make_route_map(
     if origin is not None:
         folium.Marker(
             [origin[0], origin[1]],
-            tooltip="\U0001f4cd Origin (Asphalt Plant)",
+            tooltip="\U0001f4cd Herkomst (Asfaltcentrale)",
             icon=folium.Icon(color="blue", icon="industry", prefix="fa"),
         ).add_to(m)
     if destination is not None:
         folium.Marker(
             [destination[0], destination[1]],
-            tooltip="\U0001f3c1 Destination (Delivery Site)",
+            tooltip="\U0001f3c1 Bestemming (Leveringswerf)",
             icon=folium.Icon(color="red", icon="flag-checkered", prefix="fa"),
         ).add_to(m)
     if route_coords and len(route_coords) >= 2:
@@ -454,6 +455,217 @@ def _parse_time(s: str | None) -> str | None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  OCR scanning pipeline with field-by-field review
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _run_ocr_pipeline(
+    *,
+    source_type: str = "file",
+    uploaded_file: Any = None,
+    content_type: str | None = None,
+    filename: str | None = None,
+    image_bytes: bytes | None = None,
+) -> None:
+    """Execute the OCR pipeline and show a field-by-field review panel.
+
+    Supports both file uploads and camera captures.
+    """
+    if not ocr.is_available():
+        missing = ocr.missing_dependencies()
+        st.error(
+            f"OCR-afhankelijkheden niet geïnstalleerd: {', '.join(missing)}. "
+            "Voer uit: `pip install pytesseract PyMuPDF` en installeer "
+            "[Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)."
+        )
+        return
+
+    with st.status(
+        "\U0001f50d Leveringsbon scannen en gegevens extraheren\u2026",
+        expanded=True,
+    ) as status:
+        st.write("\U0001f4f7 Beeld voorbereiden\u2026")
+        raw_text = ""
+        field_details: list[dict[str, Any]] = []
+
+        try:
+            if source_type == "camera" and image_bytes is not None:
+                st.write("\U0001f9e0 Tekst herkennen (OCR)\u2026")
+                raw_text, field_details = ocr.scan_image_bytes(image_bytes)
+            elif uploaded_file is not None:
+                st.write("\U0001f9e0 Tekst herkennen (OCR)\u2026")
+                raw_text, field_details = ocr.scan_and_extract_detailed(
+                    uploaded_file,
+                    content_type=content_type,
+                    filename=filename,
+                )
+            else:
+                status.update(
+                    label="\u274c Geen invoer ontvangen",
+                    state="error",
+                )
+                return
+        except Exception as exc:
+            status.update(
+                label="\u274c OCR mislukt",
+                state="error", expanded=True,
+            )
+            st.error(f"OCR-verwerkingsfout: {exc}")
+            return
+
+        if field_details:
+            st.write(
+                f"\U0001f50e {len(field_details)} veld(en) herkend\u2026"
+            )
+            status.update(
+                label=f"\u2705 {len(field_details)} veld(en) geëxtraheerd",
+                state="complete", expanded=False,
+            )
+        elif raw_text:
+            status.update(
+                label="\u26a0\ufe0f Tekst gevonden, geen velden herkend",
+                state="complete", expanded=False,
+            )
+        else:
+            status.update(
+                label="\u26a0\ufe0f Geen tekst gedetecteerd",
+                state="complete", expanded=False,
+            )
+
+    # --- Store results in session state for the review panel -----------
+    if field_details:
+        st.session_state["_ocr_field_details"] = field_details
+        st.session_state["_ocr_raw_text"] = raw_text
+    elif raw_text:
+        st.session_state["_ocr_raw_text"] = raw_text
+        st.warning(
+            "OCR heeft tekst gedetecteerd maar kon geen specifieke "
+            "velden herkennen. Bekijk de ruwe tekst hieronder en vul "
+            "het formulier handmatig in."
+        )
+    else:
+        st.warning(
+            "Er kon geen tekst uit dit document worden geëxtraheerd. "
+            "Controleer de beeldkwaliteit en probeer opnieuw."
+        )
+
+    # --- Field-by-field review panel -----------------------------------
+    details = st.session_state.get("_ocr_field_details", [])
+    if details:
+        st.markdown("")
+        _section_heading(
+            "\U0001f4cb", "Herkende gegevens — controleer en bevestig",
+            "Vink de velden aan die u wilt overnemen in het formulier",
+        )
+
+        # Build toggle states
+        for i, fld in enumerate(details):
+            toggle_key = f"_ocr_accept_{i}"
+            st.session_state.setdefault(toggle_key, True)
+
+        # Render as a styled table-like layout
+        # Header
+        hdr_cols = st.columns([0.5, 2, 3, 3])
+        with hdr_cols[0]:
+            st.markdown("**\u2714**")
+        with hdr_cols[1]:
+            st.markdown("**Veld**")
+        with hdr_cols[2]:
+            st.markdown("**Herkende waarde**")
+        with hdr_cols[3]:
+            st.markdown("**Bron (OCR-fragment)**")
+
+        for i, fld in enumerate(details):
+            toggle_key = f"_ocr_accept_{i}"
+            row_cols = st.columns([0.5, 2, 3, 3])
+            with row_cols[0]:
+                st.checkbox(
+                    "Accepteer", value=True, key=toggle_key,
+                    label_visibility="collapsed",
+                )
+            with row_cols[1]:
+                st.markdown(
+                    f'<span style="font-size:0.85rem;font-weight:600;'
+                    f'color:#334155;">{fld["label"]}</span>',
+                    unsafe_allow_html=True,
+                )
+            with row_cols[2]:
+                display_val = fld["value"]
+                if isinstance(display_val, float):
+                    display_val = f"{display_val:,.2f}".replace(",", " ")
+                st.markdown(
+                    f'<span style="font-size:0.88rem;color:#1e293b;'
+                    f'font-weight:500;">{display_val}</span>',
+                    unsafe_allow_html=True,
+                )
+            with row_cols[3]:
+                src = fld.get("source", "")
+                if src:
+                    st.caption(f'"{src}"')
+
+        st.markdown("")
+
+        # Accept / reject buttons
+        btn_c1, btn_c2, btn_c3 = st.columns([2, 2, 1])
+        with btn_c1:
+            apply_btn = st.button(
+                "\u2705 Geselecteerde velden overnemen",
+                type="primary",
+                use_container_width=True,
+            )
+        with btn_c2:
+            clear_btn = st.button(
+                "\u274c Scan verwijderen",
+                use_container_width=True,
+            )
+        with btn_c3:
+            select_all = st.button(
+                "\u2611 Alles",
+                use_container_width=True,
+            )
+
+        if select_all:
+            for i in range(len(details)):
+                st.session_state[f"_ocr_accept_{i}"] = True
+            st.rerun()
+
+        if clear_btn:
+            for i in range(len(details)):
+                st.session_state.pop(f"_ocr_accept_{i}", None)
+            st.session_state.pop("_ocr_field_details", None)
+            st.session_state.pop("_ocr_raw_text", None)
+            st.rerun()
+
+        if apply_btn:
+            applied = 0
+            for i, fld in enumerate(details):
+                if st.session_state.get(f"_ocr_accept_{i}", False):
+                    st.session_state[fld["key"]] = fld["value"]
+                    applied += 1
+            # Clean up review state
+            for i in range(len(details)):
+                st.session_state.pop(f"_ocr_accept_{i}", None)
+            st.session_state.pop("_ocr_field_details", None)
+            st.session_state.pop("_ocr_raw_text", None)
+            st.toast(
+                f"\u2705 {applied} veld(en) overgenomen in het formulier"
+            )
+            st.rerun()
+
+    # --- Raw OCR text (always available if text was found) -------------
+    raw = st.session_state.get("_ocr_raw_text", "")
+    if raw:
+        with st.expander("\U0001f4c4 Ruwe OCR-tekst", expanded=False):
+            st.text_area(
+                "Geëxtraheerde tekst",
+                value=raw,
+                height=200,
+                disabled=True,
+                label_visibility="collapsed",
+            )
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Page: Create / Release Delivery Note
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -464,13 +676,13 @@ def page_create_note() -> None:
     mode_col1, mode_col2 = st.columns(2)
     with mode_col1:
         plant_btn = st.button(
-            "\U0001f3ed  I am at the Asphalt Plant",
+            "\U0001f3ed  Ik ben bij de Asfaltcentrale",
             use_container_width=True,
             type="primary" if st.session_state.get("_mode", "plant") == "plant" else "secondary",
         )
     with mode_col2:
         site_btn = st.button(
-            "\U0001f3d7\ufe0f  I am the Site Supervisor",
+            "\U0001f3d7\ufe0f  Ik ben de Werftoezichter",
             use_container_width=True,
             type="primary" if st.session_state.get("_mode") == "site" else "secondary",
         )
@@ -488,35 +700,42 @@ def page_create_note() -> None:
 
     # ── Asphalt Plant mode ──────────────────────────────────────────────
     _stepper(
-        [("\U0001f4dd", "Basic Details"), ("\U0001f5fa\ufe0f", "Route"),
-         ("\U0001f4e6", "Product & Compliance"), ("\U0001f680", "Release"),
+        [("\U0001f4dd", "Basisgegevens"), ("\U0001f5fa\ufe0f", "Route"),
+         ("\U0001f4e6", "Product & Conformiteit"), ("\U0001f680", "Vrijgave"),
          ("\U0001f4ca", "GPP Tool")],
         active=0,
     )
 
-    # ── OCR Upload ──────────────────────────────────────────────────────
-    with st.expander("\U0001f4c4 Upload a scanned delivery note (AI-powered OCR)", expanded=False):
+    # ── OCR Scan ────────────────────────────────────────────────────────
+    with st.expander("\U0001f4f7 Scan leveringsbon — automatisch invullen via OCR", expanded=False):
         _card(
-            '<div style="font-size:0.85rem;color:#334155;">'
-            'Upload a photo or scan of an existing paper delivery note. '
-            'Our AI-powered OCR engine will automatically extract and '
-            'populate all fields.</div>',
-            bg="#f0f9ff", border="1px solid #bae6fd",
+            '<div style="display:flex;align-items:flex-start;gap:14px;">'
+            '<div style="font-size:2rem;">\U0001f4f7</div>'
+            '<div>'
+            '<div style="font-size:0.95rem;font-weight:700;color:#1e293b;margin-bottom:4px;">'
+            'Automatisch velden invullen via OCR</div>'
+            '<div style="font-size:0.85rem;color:#475569;line-height:1.5;">'
+            'Upload een scan of PDF van een bestaande papieren leveringsbon. Herkende gegevens worden '
+            'automatisch in het formulier geplaatst.</div>'
+            '</div></div>',
+            bg="#f0f9ff", border="1px solid #bae6fd", padding="16px 20px",
         )
+
         scan_c1, scan_c2 = st.columns([3, 1])
         with scan_c1:
             uploaded_scan = st.file_uploader(
-                "Choose file",
+                "Kies bestand",
                 type=["png", "jpg", "jpeg", "pdf", "tiff", "bmp"],
-                help="Supported: PNG, JPG, PDF, TIFF, BMP",
+                help="Ondersteund: PNG, JPG, PDF, TIFF, BMP",
                 key="scan_upload",
                 label_visibility="collapsed",
             )
         with scan_c2:
             process_scan = st.button(
-                "\U0001f50d Extract data",
+                "\U0001f50d Scannen",
                 disabled=uploaded_scan is None,
                 use_container_width=True,
+                type="primary",
             )
         if uploaded_scan is not None:
             if uploaded_scan.type and uploaded_scan.type.startswith("image"):
@@ -527,29 +746,21 @@ def page_create_note() -> None:
                     f"\U0001f4ce {uploaded_scan.name} "
                     f"({uploaded_scan.size / 1024:.0f} KB)"
                 )
+
+        # --- Process: file upload ---
         if process_scan and uploaded_scan is not None:
-            with st.status("\U0001f50d Processing scanned delivery note\u2026",
-                           expanded=True) as status:
-                st.write("Analysing document layout\u2026")
-                _time.sleep(0.6)
-                st.write("Detecting text regions (OCR engine)\u2026")
-                _time.sleep(0.8)
-                st.write("Extracting structured fields\u2026")
-                _time.sleep(0.5)
-                st.write("Mapping extracted data to form fields\u2026")
-                _time.sleep(0.4)
-                status.update(label="\u2705 Extraction complete!",
-                              state="complete", expanded=False)
-            _load_demo_data()
-            st.success("All fields auto-populated from your scan. "
-                       "Review and adjust below.")
-            st.rerun()
+            _run_ocr_pipeline(
+                source_type="file",
+                uploaded_file=uploaded_scan,
+                content_type=getattr(uploaded_scan, "type", None),
+                filename=getattr(uploaded_scan, "name", None),
+            )
 
     # Quick-fill for demos
     _, demo_col, _ = st.columns([2, 1, 2])
     with demo_col:
-        if st.button("\U0001f4cb Load demo data", use_container_width=True,
-                     help="Pre-fill all fields with sample data"):
+        if st.button("\U0001f4cb Demogegevens laden", use_container_width=True,
+                     help="Vul alle velden in met voorbeeldgegevens"):
             _load_demo_data()
             st.rerun()
 
@@ -558,76 +769,76 @@ def page_create_note() -> None:
     # ════════════════════════════════════════════════════════════════════
     #  STEP A — Basic Details
     # ════════════════════════════════════════════════════════════════════
-    with st.expander("\U0001f4dd  Step 1 \u2014 Basic Details", expanded=True):
-        _section_heading("\U0001f4dd", "Basic Details",
-                         "Delivery note identification and transport info")
+    with st.expander("\U0001f4dd  Stap 1 \u2014 Basisgegevens", expanded=True):
+        _section_heading("\U0001f4dd", "Basisgegevens",
+                         "Identificatie leveringsbon en transportinfo")
         a1, a2 = st.columns(2)
         with a1:
-            note_date = st.date_input("Date", value=date.today())
+            note_date = st.date_input("Datum", value=date.today())
             delivery_note_no = st.text_input(
-                "Delivery Note No", key="k_delivery_note_no",
-                placeholder="e.g. DDN-2026-00142",
+                "Leveringsbonnummer", key="k_delivery_note_no",
+                placeholder="bijv. DDN-2026-00142",
             )
             if not st.session_state.get("k_delivery_note_no", "").strip():
-                st.caption("\u26a0\ufe0f Required \u2014 enter a unique delivery note number")
+                st.caption("\u26a0\ufe0f Verplicht \u2014 voer een uniek leveringsbonnummer in")
         with a2:
             transport_company = st.text_input(
-                "Transport company", key="k_transport_company",
-                placeholder="e.g. Van Hoeck Transport NV",
+                "Transportbedrijf", key="k_transport_company",
+                placeholder="bijv. Van Hoeck Transport NV",
             )
             license_plate = st.text_input(
-                "License plate (Nummerplaat)", key="k_license_plate",
-                placeholder="e.g. 1-ABC-234",
+                "Nummerplaat", key="k_license_plate",
+                placeholder="bijv. 1-ABC-234",
             )
 
     # ════════════════════════════════════════════════════════════════════
     #  STEP B — Route
     # ════════════════════════════════════════════════════════════════════
-    with st.expander("\U0001f5fa\ufe0f  Step 2 \u2014 Route", expanded=True):
-        _section_heading("\U0001f5fa\ufe0f", "Route Planning",
-                         "Set origin (plant) and destination (site) locations")
+    with st.expander("\U0001f5fa\ufe0f  Stap 2 \u2014 Route", expanded=True):
+        _section_heading("\U0001f5fa\ufe0f", "Routeplanning",
+                         "Stel herkomst (centrale) en bestemming (werf) in")
 
         loc1, loc2 = st.columns(2)
         with loc1:
-            st.markdown("##### \U0001f4cd Origin \u2014 Asphalt Plant")
+            st.markdown("##### \U0001f4cd Herkomst \u2014 Asfaltcentrale")
             origin_query = st.text_input(
-                "Search origin address",
-                placeholder="Type plant address or place name\u2026",
+                "Zoek herkomstadres",
+                placeholder="Typ adres of plaatsnaam van de centrale\u2026",
                 key="k_origin_query", label_visibility="collapsed",
             )
             origin_suggestions = _throttled_suggestions(origin_query, "origin")
             origin_selected = None
             if origin_suggestions:
                 origin_selected = st.selectbox(
-                    "Suggested origins",
+                    "Voorgestelde herkomsten",
                     options=list(range(len(origin_suggestions))),
                     format_func=lambda i: origin_suggestions[i]["label"],
                     key="origin_choice", label_visibility="collapsed",
                 )
-                if st.button("\u2713 Use this origin", key="apply_origin"):
+                if st.button("\u2713 Gebruik deze herkomst", key="apply_origin"):
                     sel = origin_suggestions[int(origin_selected)]
                     st.session_state["plant_lat"] = float(sel["lat"])
                     st.session_state["plant_lon"] = float(sel["lon"])
                     st.session_state["plant_address"] = sel["label"]
-            if st.button("\U0001f4e1 Use GPS", key="gps_origin",
-                         help="Detect current location via browser"):
+            if st.button("\U0001f4e1 Gebruik GPS", key="gps_origin",
+                         help="Detecteer huidige locatie via browser"):
                 geo_data = get_geolocation()
                 if geo_data and isinstance(geo_data, dict) and geo_data.get("coords"):
                     coords = geo_data["coords"]
                     try:
                         st.session_state["plant_lat"] = float(coords["latitude"])
                         st.session_state["plant_lon"] = float(coords["longitude"])
-                        st.toast("\U0001f4cd Plant location updated from GPS")
+                        st.toast("\U0001f4cd Centralelocatie bijgewerkt via GPS")
                     except Exception:
-                        st.warning("Could not read browser location.")
+                        st.warning("Kon browserlocatie niet lezen.")
                 else:
-                    st.info("Browser will ask for location permission.")
+                    st.info("Browser zal om locatietoestemming vragen.")
 
         with loc2:
-            st.markdown("##### \U0001f3c1 Destination \u2014 Delivery Site")
+            st.markdown("##### \U0001f3c1 Bestemming \u2014 Werf")
             destination_query = st.text_input(
-                "Search destination address",
-                placeholder="Type delivery address or site name\u2026",
+                "Zoek bestemmingsadres",
+                placeholder="Typ leveradres of werfnaam\u2026",
                 key="k_destination_query", label_visibility="collapsed",
             )
             destination_suggestions = _throttled_suggestions(
@@ -636,30 +847,30 @@ def page_create_note() -> None:
             destination_selected = None
             if destination_suggestions:
                 destination_selected = st.selectbox(
-                    "Suggested destinations",
+                    "Voorgestelde bestemmingen",
                     options=list(range(len(destination_suggestions))),
                     format_func=lambda i: destination_suggestions[i]["label"],
                     key="destination_choice", label_visibility="collapsed",
                 )
-                if st.button("\u2713 Use this destination",
+                if st.button("\u2713 Gebruik deze bestemming",
                              key="apply_destination"):
                     sel2 = destination_suggestions[int(destination_selected)]
                     st.session_state["site_lat"] = float(sel2["lat"])
                     st.session_state["site_lon"] = float(sel2["lon"])
                     st.session_state["site_address"] = sel2["label"]
-            if st.button("\U0001f4e1 Use GPS", key="gps_site",
-                         help="Detect current location via browser"):
+            if st.button("\U0001f4e1 Gebruik GPS", key="gps_site",
+                         help="Detecteer huidige locatie via browser"):
                 geo_data = get_geolocation()
                 if geo_data and isinstance(geo_data, dict) and geo_data.get("coords"):
                     coords = geo_data["coords"]
                     try:
                         st.session_state["site_lat"] = float(coords["latitude"])
                         st.session_state["site_lon"] = float(coords["longitude"])
-                        st.toast("\U0001f3c1 Site location updated from GPS")
+                        st.toast("\U0001f3c1 Werflocatie bijgewerkt via GPS")
                     except Exception:
-                        st.warning("Could not read browser location.")
+                        st.warning("Kon browserlocatie niet lezen.")
                 else:
-                    st.info("Browser will ask for location permission.")
+                    st.info("Browser zal om locatietoestemming vragen.")
 
         st.markdown("")
 
@@ -682,13 +893,13 @@ def page_create_note() -> None:
         sc1, sc2 = st.columns(2)
         with sc1:
             _location_card(
-                "Origin \u2014 Plant", "\U0001f4cd",
+                "Herkomst \u2014 Centrale", "\U0001f4cd",
                 str(st.session_state.get("plant_address", origin_query.strip())),
                 origin_marker[0], origin_marker[1],
             )
         with sc2:
             _location_card(
-                "Destination \u2014 Site", "\U0001f3c1",
+                "Bestemming \u2014 Werf", "\U0001f3c1",
                 str(st.session_state.get("site_address",
                                          destination_query.strip())),
                 destination_marker[0], destination_marker[1],
@@ -697,8 +908,8 @@ def page_create_note() -> None:
         st.markdown("")
 
         pin_mode = st.radio(
-            "Click on the map to set:",
-            options=["\U0001f4cd Plant (Origin)", "\U0001f3c1 Site (Destination)"],
+            "Klik op de kaart om in te stellen:",
+            options=["\U0001f4cd Centrale (Herkomst)", "\U0001f3c1 Werf (Bestemming)"],
             horizontal=True,
         )
 
@@ -724,23 +935,23 @@ def page_create_note() -> None:
         if map_out and map_out.get("last_clicked"):
             lat_clicked = float(map_out["last_clicked"]["lat"])
             lon_clicked = float(map_out["last_clicked"]["lng"])
-            if "Plant" in pin_mode:
+            if "Centrale" in pin_mode:
                 st.session_state["plant_lat"] = lat_clicked
                 st.session_state["plant_lon"] = lon_clicked
-                st.toast("\U0001f4cd Plant pin updated on map")
+                st.toast("\U0001f4cd Centralepin bijgewerkt op kaart")
             else:
                 st.session_state["site_lat"] = lat_clicked
                 st.session_state["site_lon"] = lon_clicked
-                st.toast("\U0001f3c1 Site pin updated on map")
+                st.toast("\U0001f3c1 Werfpin bijgewerkt op kaart")
 
         # Map legend
         _card(
             '<div style="display:flex;gap:24px;align-items:center;flex-wrap:wrap;">'
-            '<span style="font-size:0.8rem;">\U0001f535 <b>Origin</b> '
-            '\u2014 Asphalt Plant</span>'
-            '<span style="font-size:0.8rem;">\U0001f534 <b>Destination</b> '
-            '\u2014 Delivery Site</span>'
-            '<span style="font-size:0.8rem;">\u2500\u2500 <b>Driving Route</b></span>'
+            '<span style="font-size:0.8rem;">\U0001f535 <b>Herkomst</b> '
+            '\u2014 Asfaltcentrale</span>'
+            '<span style="font-size:0.8rem;">\U0001f534 <b>Bestemming</b> '
+            '\u2014 Leveringswerf</span>'
+            '<span style="font-size:0.8rem;">\u2500\u2500 <b>Rijroute</b></span>'
             '</div>',
             bg="#f8fafc", padding="10px 16px",
         )
@@ -760,9 +971,9 @@ def page_create_note() -> None:
         transport_type = "Truck"
         d1, d2 = st.columns(2)
         with d1:
-            st.text_input("Transport type", value=transport_type, disabled=True)
+            st.text_input("Transporttype", value=transport_type, disabled=True)
         with d2:
-            energy_source = st.selectbox("Energy source",
+            energy_source = st.selectbox("Energiebron",
                                          options=ENERGY_SOURCES, index=0)
 
         plant_point = geo.GeoPoint(
@@ -779,94 +990,94 @@ def page_create_note() -> None:
         if route:
             distance_km, duration_min = route
             st.success(
-                f"\U0001f6e3\ufe0f Driving distance: **{distance_km:.1f} km** "
+                f"\U0001f6e3\ufe0f Rijafstand: **{distance_km:.1f} km** "
                 f"(\u2248 {duration_min:.0f} min)"
             )
         else:
             distance_km = geo.haversine_km(plant_point, site_point)
             st.info(
-                f"\U0001f4cf Straight-line distance: **{distance_km:.1f} km** "
-                f"(route service unavailable)"
+                f"\U0001f4cf Hemelsbreed: **{distance_km:.1f} km** "
+                f"(routeservice niet beschikbaar)"
             )
 
     # ════════════════════════════════════════════════════════════════════
     #  STEP C — Product, Compliance & Recipients
     # ════════════════════════════════════════════════════════════════════
     with st.expander(
-        "\U0001f4e6  Step 3 \u2014 Product, Compliance & Recipients",
+        "\U0001f4e6  Stap 3 \u2014 Product, Conformiteit & Ontvangers",
         expanded=True,
     ):
         sub = st.tabs([
-            "\U0001f3d7\ufe0f Site Delivery",
-            "\U0001f9ea Product & Documents",
-            "\u2696\ufe0f Weights",
-            "\U0001f4e7 Recipients",
+            "\U0001f3d7\ufe0f Levering op werf",
+            "\U0001f9ea Product & Documenten",
+            "\u2696\ufe0f Gewichten",
+            "\U0001f4e7 Ontvangers",
         ])
 
         with sub[0]:
-            _section_heading("\U0001f3d7\ufe0f", "Site Delivery",
-                             "Client and site address details")
+            _section_heading("\U0001f3d7\ufe0f", "Levering op werf",
+                             "Opdrachtgever- en werfadresgegevens")
             client_address = st.text_area(
-                "Client address", placeholder="Enter the client address\u2026",
+                "Adres opdrachtgever", placeholder="Voer het adres van de opdrachtgever in\u2026",
                 key="k_client_address", height=100,
             )
             st.text_area(
-                "Destination (site) address",
+                "Bestemming (werf) adres",
                 value=st.session_state.get("site_address", ""),
                 disabled=True, height=68,
             )
             tc1, tc2 = st.columns(2)
             with tc1:
                 st.text_input(
-                    "Departure time",
+                    "Vertrektijd",
                     value=st.session_state.get("_departure_time",
-                                               "Auto on release"),
+                                               "Automatisch bij vrijgave"),
                     disabled=True,
                 )
             with tc2:
-                st.text_input("Arrival time", value="Auto on site receipt",
+                st.text_input("Aankomsttijd", value="Automatisch bij ontvangst op werf",
                               disabled=True)
 
         with sub[1]:
-            _section_heading("\U0001f9ea", "Product & Documents",
-                             "Mixture specifications and compliance documentation")
+            _section_heading("\U0001f9ea", "Product & Documenten",
+                             "Mengselspecificaties en conformiteitsdocumentatie")
             p1, p2 = st.columns(2)
             with p1:
                 product_mixture_type = st.text_input(
-                    "Product / Mixture type", key="k_product_mixture_type",
-                    placeholder="e.g. AC 14 surf B50/70",
+                    "Product / Mengseltype", key="k_product_mixture_type",
+                    placeholder="bijv. AC 14 surf B50/70",
                 )
                 application = st.text_input(
-                    "Application", key="k_application",
-                    placeholder="e.g. Surface course",
+                    "Toepassing", key="k_application",
+                    placeholder="bijv. Toplaag",
                 )
-                certificate = st.text_input("Certificate", key="k_certificate")
+                certificate = st.text_input("Certificaat", key="k_certificate")
                 declaration_of_performance = st.text_input(
-                    "Declaration of Performance",
+                    "Prestatieverklaring",
                     key="k_declaration_of_performance",
                 )
                 technical_data_sheet = st.text_input(
-                    "Technical Data Sheet", key="k_technical_data_sheet",
+                    "Technische Fiche", key="k_technical_data_sheet",
                 )
             with p2:
                 mechanical_resistance = st.text_input(
-                    "Mechanical resistance", key="k_mechanical_resistance",
+                    "Mechanische weerstand", key="k_mechanical_resistance",
                 )
                 fuel_resistance = st.text_input(
-                    "Fuel resistance", key="k_fuel_resistance",
+                    "Brandstofbestendigheid", key="k_fuel_resistance",
                 )
                 deicing_resistance = st.text_input(
-                    "De-icing resistance", key="k_deicing_resistance",
+                    "Dooizoutbestendigheid", key="k_deicing_resistance",
                 )
                 bitumen_aggregate_affinity = st.text_input(
-                    "Bitumen\u2013aggregate affinity",
+                    "Bitumen\u2013aggregaat hechting",
                     key="k_bitumen_aggregate_affinity",
                 )
-                disposal = st.text_input("Disposal", key="k_disposal")
+                disposal = st.text_input("Verwijdering", key="k_disposal")
 
         with sub[2]:
-            _section_heading("\u2696\ufe0f", "Weights",
-                             "Gross, tare and net quantities")
+            _section_heading("\u2696\ufe0f", "Gewichten",
+                             "Bruto-, tarra- en nettohoeveelheden")
             w1, w2, w3 = st.columns(3)
             with w1:
                 bruto_kg = st.number_input(
@@ -875,41 +1086,41 @@ def page_create_note() -> None:
                 )
             with w2:
                 tare_weight_empty_kg = st.number_input(
-                    "Tare weight \u2014 empty (kg)", min_value=0.0, value=0.0,
+                    "Tarra gewicht \u2014 leeg (kg)", min_value=0.0, value=0.0,
                     step=1.0, key="k_tare_weight_empty_kg",
                 )
             with w3:
                 net_total_quantity_ton = st.number_input(
-                    "Net total (ton)", min_value=0.0, value=0.0, step=0.01,
+                    "Netto totaal (ton)", min_value=0.0, value=0.0, step=0.01,
                     key="k_net_total_quantity_ton",
                 )
             if bruto_kg > 0 and tare_weight_empty_kg > 0:
                 calculated_net = (bruto_kg - tare_weight_empty_kg) / 1000.0
-                st.caption(f"Calculated net: {calculated_net:.2f} ton")
+                st.caption(f"Berekend netto: {calculated_net:.2f} ton")
 
         with sub[3]:
             _section_heading(
-                "\U0001f4e7", "Recipients",
-                "Email addresses for automatic delivery of signed documents",
+                "\U0001f4e7", "Ontvangers",
+                "E-mailadressen voor automatische verzending van ondertekende documenten",
             )
             r1, r2 = st.columns(2)
             with r1:
                 email_client = st.text_input(
-                    "Client email", key="k_email_client",
+                    "E-mail opdrachtgever", key="k_email_client",
                     placeholder="client@example.be",
                 )
                 email_transporter = st.text_input(
-                    "Transporter email", key="k_email_transporter",
+                    "E-mail vervoerder", key="k_email_transporter",
                     placeholder="transport@example.be",
                 )
             with r2:
                 email_copro = st.text_input(
-                    "COPRO email", key="k_email_copro",
+                    "E-mail COPRO", key="k_email_copro",
                     placeholder="copro@example.eu",
                 )
                 email_permit_holder = st.text_input(
-                    "Permit holder email", key="k_email_permit_holder",
-                    placeholder="permit@example.be",
+                    "E-mail vergunninghouder", key="k_email_permit_holder",
+                    placeholder="vergunning@voorbeeld.be",
                 )
             recipient_count = sum(
                 1 for e in [
@@ -920,14 +1131,14 @@ def page_create_note() -> None:
                 ] if e.strip()
             )
             if recipient_count:
-                st.caption(f"\u2709\ufe0f {recipient_count} recipient(s) configured")
+                st.caption(f"\u2709\ufe0f {recipient_count} ontvanger(s) geconfigureerd")
 
     # ════════════════════════════════════════════════════════════════════
     #  RELEASE — Summary + Action
     # ════════════════════════════════════════════════════════════════════
     st.markdown("")
-    _section_heading("\U0001f680", "Release Delivery Note",
-                     "Review the summary and release")
+    _section_heading("\U0001f680", "Leveringsbon Vrijgeven",
+                     "Bekijk de samenvatting en geef vrij")
 
     ddn = st.session_state.get("k_delivery_note_no", "").strip()
     product_val = st.session_state.get("k_product_mixture_type", "").strip()
@@ -941,11 +1152,11 @@ def page_create_note() -> None:
         ] if e.strip()
     )
     summary_items = [
-        f"<b>DDN:</b> {ddn or '\u26a0\ufe0f Not set'}",
+        f"<b>DDN:</b> {ddn or '\u26a0\ufe0f Niet ingesteld'}",
         f"<b>Product:</b> {product_val or '\u2014'}",
-        f"<b>Net:</b> {net_val:.2f} ton" if net_val else "<b>Net:</b> \u2014",
-        f"<b>Distance:</b> {distance_km:.1f} km",
-        f"<b>Recipients:</b> {recipient_count}",
+        f"<b>Netto:</b> {net_val:.2f} ton" if net_val else "<b>Netto:</b> \u2014",
+        f"<b>Afstand:</b> {distance_km:.1f} km",
+        f"<b>Ontvangers:</b> {recipient_count}",
     ]
     _card(
         '<div style="display:flex;flex-wrap:wrap;gap:20px;font-size:0.88rem;'
@@ -957,7 +1168,7 @@ def page_create_note() -> None:
 
     st.markdown("")
     create_clicked = st.button(
-        "\U0001f680  Release at Asphalt Plant & Send",
+        "\U0001f680  Vrijgeven bij Asfaltcentrale & Verzenden",
         type="primary", use_container_width=True,
     )
 
@@ -996,12 +1207,12 @@ def page_create_note() -> None:
 
     # ── Validation ──────────────────────────────────────────────────────
     if not delivery_note_no.strip():
-        st.error("\u274c Delivery Note No is required.")
+        st.error("\u274c Leveringsbonnummer is verplicht.")
         return
 
     existing = storage.get_note_by_delivery_note_no(delivery_note_no.strip())
     if existing:
-        st.error("\u274c A delivery note with this number already exists.")
+        st.error("\u274c Er bestaat al een leveringsbon met dit nummer.")
         return
 
     now = datetime.now()
@@ -1056,21 +1267,21 @@ def page_create_note() -> None:
 
     # ── Success screen ──────────────────────────────────────────────────
     st.balloons()
-    st.success("\u2705 Delivery note released! Departure time recorded.")
+    st.success("\u2705 Leveringsbon vrijgegeven! Vertrektijd geregistreerd.")
 
-    _section_heading("\U0001f517", "Signing Links",
-                     "Share these links with each party to collect signatures")
+    _section_heading("\U0001f517", "Ondertekeningslinks",
+                     "Deel deze links met elke partij om handtekeningen te verzamelen")
     for role, link in links.items():
         st.text_input(
-            f"{ROLE_LABELS[role]} signing link", value=link,
+            f"{ROLE_LABELS[role]} ondertekeningslink", value=link,
             key=f"_link_{role}", disabled=False,
-            help="Copy this link and send to the party",
+            help="Kopieer deze link en stuur naar de partij",
         )
 
     _card(
         '<div style="font-size:0.9rem;color:#1e40af;">'
-        '<b>\U0001f4f1 Site Supervisor:</b> Open the app, select '
-        '"Site Supervisor" mode, and enter Delivery Note No: '
+        '<b>\U0001f4f1 Werftoezichter:</b> Open de app, selecteer '
+        '"Werftoezichter" modus, en voer Leveringsbonnummer in: '
         f'<b>{delivery_note_no.strip()}</b></div>',
         bg="#eff6ff", border="1px solid #bfdbfe",
     )
@@ -1084,23 +1295,23 @@ def page_create_note() -> None:
                 mailer.send_email(
                     [email],
                     subject=(
-                        f"Delivery note signing request "
+                        f"Ondertekeningsverzoek leveringsbon "
                         f"({payload.get('delivery_note_no') or note_id})"
                     ),
                     body=(
-                        "Please review and sign the digital delivery note "
-                        "using this link:\n\n"
+                        "Gelieve de digitale leveringsbon te bekijken en "
+                        "te ondertekenen via deze link:\n\n"
                         f"{link}\n\n"
-                        "(If this is a local run, prepend your Streamlit "
-                        "base URL.)\n"
+                        "(Bij een lokale uitvoering, voeg uw Streamlit "
+                        "basis-URL toe.)\n"
                     ),
                 )
-            st.info("\u2709\ufe0f Signing requests emailed to all parties.")
+            st.info("\u2709\ufe0f Ondertekeningsverzoeken per e-mail verzonden naar alle partijen.")
         except Exception as e:
-            st.warning(f"Email sending failed: {e}")
+            st.warning(f"E-mailverzending mislukt: {e}")
     else:
-        st.info("\u2139\ufe0f Email not configured \u2014 share the links "
-                "above manually (prototype mode)")
+        st.info("\u2139\ufe0f E-mail niet geconfigureerd \u2014 deel de links "
+                "hierboven handmatig (prototype modus)")
 
 
     # ════════════════════════════════════════════════════════════════════
@@ -1132,7 +1343,7 @@ def page_create_note() -> None:
             '<div style="font-size:0.85rem;font-weight:700;color:#1e293b;">'
             'Excel Export</div>'
             '<div style="font-size:0.78rem;color:#64748b;margin-top:4px;">'
-            'Delivery data flows into the GPP spreadsheet automatically</div>'
+            'Leveringsgegevens vloeien automatisch in het GPP-werkblad</div>'
             '</div>',
             padding="18px",
         )
@@ -1141,9 +1352,9 @@ def page_create_note() -> None:
             '<div style="text-align:center;">'
             '<div style="font-size:1.8rem;margin-bottom:6px;">\U0001f4c8</div>'
             '<div style="font-size:0.85rem;font-weight:700;color:#1e293b;">'
-            'Quantity Tracking</div>'
+            'Hoeveelheidsopvolging</div>'
             '<div style="font-size:0.78rem;color:#64748b;margin-top:4px;">'
-            'Tonnes delivered vs. planned are reconciled per work order</div>'
+            'Geleverde versus geplande tonnen worden per werkorder afgestemd</div>'
             '</div>',
             padding="18px",
         )
@@ -1152,41 +1363,41 @@ def page_create_note() -> None:
             '<div style="text-align:center;">'
             '<div style="font-size:1.8rem;margin-bottom:6px;">\U0001f5d3\ufe0f</div>'
             '<div style="font-size:0.85rem;font-weight:700;color:#1e293b;">'
-            'Project Timeline</div>'
+            'Projectplanning</div>'
             '<div style="font-size:0.78rem;color:#64748b;margin-top:4px;">'
-            'Delivery milestones sync with the overall project schedule</div>'
+            'Leveringsmijlpalen synchroniseren met het totale projectschema</div>'
             '</div>',
             padding="18px",
         )
 
-    with st.expander("\U0001f50c GPP Connection Settings (coming soon)", expanded=False):
+    with st.expander("\U0001f50c GPP-verbindingsinstellingen (binnenkort beschikbaar)", expanded=False):
         st.text_input(
-            "GPP Excel file path",
+            "GPP Excel-bestandspad",
             value="",
-            placeholder="e.g. C:/Projects/GPP_werkorder_2026.xlsx",
+            placeholder="bijv. C:/Projecten/GPP_werkorder_2026.xlsx",
             disabled=True,
             key="k_gpp_filepath",
-            help="Path to the GPP Excel workbook",
+            help="Pad naar het GPP Excel-werkboek",
         )
         st.text_input(
-            "Work order / Project code",
+            "Werkorder / Projectcode",
             value="",
-            placeholder="e.g. WO-2026-0145",
+            placeholder="bijv. WO-2026-0145",
             disabled=True,
             key="k_gpp_workorder",
-            help="GPP work order reference to link deliveries to",
+            help="GPP-werkorderreferentie om leveringen aan te koppelen",
         )
         st.selectbox(
-            "Target sheet",
+            "Doelblad",
             options=["Leveringen", "Hoeveelheden", "Planning"],
             disabled=True,
             key="k_gpp_sheet",
-            help="Which sheet in the GPP workbook to populate",
+            help="Welk blad in het GPP-werkboek moet worden ingevuld",
         )
         _card(
             '<div style="font-size:0.82rem;color:#92400e;">'
-            '\u26a0\ufe0f This feature is under development. '
-            'GPP integration will be available in a future release.</div>',
+            '\u26a0\ufe0f Deze functie is in ontwikkeling. '
+            'GPP-integratie zal beschikbaar zijn in een toekomstige versie.</div>',
             bg="#fffbeb", border="1px solid #fde68a", padding="12px 16px",
         )
 
@@ -1198,52 +1409,52 @@ def page_create_note() -> None:
 
 def _page_site_supervisor() -> None:
     """Site supervisor mode — receive a delivery."""
-    _section_heading("\U0001f3d7\ufe0f", "Receive Delivery",
-                     "Record truck arrival time for a released delivery note")
+    _section_heading("\U0001f3d7\ufe0f", "Levering Ontvangen",
+                     "Registreer aankomsttijd vrachtwagen voor een vrijgegeven leveringsbon")
 
     _card(
         '<div style="font-size:0.85rem;color:#334155;">'
-        'Enter or select the Delivery Note number from the released notes. '
-        'Once the truck arrives, press the button to record the arrival '
-        'time.</div>',
+        'Voer het leveringsbonnummer in of selecteer het uit de vrijgegeven bonnen. '
+        'Zodra de vrachtwagen aankomt, druk op de knop om de aankomsttijd '
+        'te registreren.</div>',
         bg="#f0fdf4", border="1px solid #bbf7d0",
     )
 
     available = storage.list_delivery_note_nos(status="released", limit=200)
     dn = ""
     if available:
-        dn = st.selectbox("Select a released Delivery Note",
+        dn = st.selectbox("Selecteer een vrijgegeven leveringsbon",
                           options=available, index=0)
     else:
-        st.info("No released delivery notes found yet. "
-                "Waiting for plant to release a note.")
+        st.info("Nog geen vrijgegeven leveringsbonnen gevonden. "
+                "Wachten tot de centrale een bon vrijgeeft.")
 
     manual = st.text_input(
-        "Or enter Delivery Note No manually", value="",
-        placeholder="e.g. DDN-2026-00142",
+        "Of voer leveringsbonnummer handmatig in", value="",
+        placeholder="bijv. DDN-2026-00142",
     )
     if manual.strip():
         dn = manual.strip()
 
     st.markdown("")
-    if st.button("\U0001f69b  Truck Received \u2014 Record Arrival Time",
+    if st.button("\U0001f69b  Vrachtwagen Ontvangen \u2014 Aankomsttijd Registreren",
                  type="primary", use_container_width=True):
         if not dn.strip():
-            st.error("Please enter the Delivery Note No.")
+            st.error("Voer het leveringsbonnummer in.")
             return
         note = storage.get_note_by_delivery_note_no(dn.strip())
         if not note:
-            st.error("No delivery note found for this number.")
+            st.error("Geen leveringsbon gevonden voor dit nummer.")
             return
         if note.get("status") not in {
             "released", "received", "completed", "pending",
         }:
-            st.warning("Unknown note status; proceeding.")
+            st.warning("Onbekende bonnenstatus; wordt voortgezet.")
 
         payload = note["payload"]
         if note.get("status") == "pending":
-            st.error("This delivery note has not been released at the "
-                     "asphalt plant yet.")
+            st.error("Deze leveringsbon is nog niet vrijgegeven bij de "
+                     "asfaltcentrale.")
             return
 
         now = datetime.now()
@@ -1261,6 +1472,13 @@ def _page_site_supervisor() -> None:
 
         sigs = storage.list_signatures(note["id"])
         xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs)
+        # ── GPP INTEGRATION POINT B (aankomst / arrival) ────────────────────
+        # Push the completed delivery note to GPP here.
+        # Uncomment once gpp_integration.py is implemented:
+        #
+        #   import gpp_integration
+        #   gpp_integration.push_to_gpp(payload, sigs)
+        # ───────────────────────────────────────────────────────────────────
 
         emails = [
             payload.get("emails", {}).get("client"),
@@ -1276,13 +1494,13 @@ def _page_site_supervisor() -> None:
                 mailer.send_email(
                     emails,
                     subject=(
-                        f"DDN (arrival recorded) "
+                        f"DDN (aankomst geregistreerd) "
                         f"({payload.get('delivery_note_no') or note['id']})"
                     ),
                     body=(
-                        "Arrival time has been recorded by the site "
-                        "supervisor. The Digital Delivery Note (Excel) "
-                        "is attached."
+                        "Aankomsttijd is geregistreerd door de "
+                        "werftoezichter. De Digitale Leveringsbon (Excel) "
+                        "is bijgevoegd."
                     ),
                     attachments=[(
                         _safe_filename(note["id"]),
@@ -1293,29 +1511,29 @@ def _page_site_supervisor() -> None:
                 )
                 emailed = True
             except Exception as e:
-                st.warning(f"Email sending failed: {e}")
+                st.warning(f"E-mailverzending mislukt: {e}")
 
         st.balloons()
         if emailed:
             storage.mark_completed(note["id"])
             st.success(
-                f"\u2705 Arrival recorded at **{payload['arrival_time']}**. "
-                f"Excel generated and emailed."
+                f"\u2705 Aankomst geregistreerd om **{payload['arrival_time']}**. "
+                f"Excel gegenereerd en verzonden per e-mail."
             )
             _card(
                 '<div style="font-size:0.85rem;color:#166534;">'
-                f'<b>Emailed to:</b> {", ".join(emails)}</div>',
+                f'<b>Verzonden naar:</b> {", ".join(emails)}</div>',
                 bg="#f0fdf4", border="1px solid #bbf7d0",
             )
         else:
             if emails and not mailer.email_enabled():
-                st.info("Email not configured; Excel generated for download.")
+                st.info("E-mail niet geconfigureerd; Excel gegenereerd om te downloaden.")
             elif not emails:
-                st.info("No recipient emails provided; Excel generated "
-                        "for download.")
+                st.info("Geen e-mailadressen van ontvangers opgegeven; Excel gegenereerd "
+                        "om te downloaden.")
             else:
                 st.success(
-                    f"\u2705 Arrival recorded at "
+                    f"\u2705 Aankomst geregistreerd om "
                     f"**{payload['arrival_time']}**."
                 )
 
@@ -1339,7 +1557,7 @@ def page_sign(note_id: str, role: str) -> None:
 
     note = storage.get_note(note_id)
     if not note:
-        st.error("Unknown delivery note.")
+        st.error("Onbekende leveringsbon.")
         return
 
     payload = note["payload"]
@@ -1353,7 +1571,7 @@ def page_sign(note_id: str, role: str) -> None:
             '<div style="display:inline-block;padding:4px 16px;'
             'background:#dcfce7;color:#166534;border-radius:999px;'
             'font-size:0.82rem;font-weight:600;margin-bottom:12px;">'
-            f'\u2705 Signed as {label}</div>',
+            f'\u2705 Ondertekend als {label}</div>',
             unsafe_allow_html=True,
         )
     else:
@@ -1361,50 +1579,50 @@ def page_sign(note_id: str, role: str) -> None:
             '<div style="display:inline-block;padding:4px 16px;'
             'background:#fef3c7;color:#92400e;border-radius:999px;'
             'font-size:0.82rem;font-weight:600;margin-bottom:12px;">'
-            f'\u270d\ufe0f Awaiting signature \u2014 {label}</div>',
+            f'\u270d\ufe0f Wacht op handtekening \u2014 {label}</div>',
             unsafe_allow_html=True,
         )
 
-    _section_heading("\u270d\ufe0f", f"Sign as {label}")
+    _section_heading("\u270d\ufe0f", f"Ondertekenen als {label}")
 
     # Signing progress
     st.progress(signed_count / total,
-                text=f"Signatures: {signed_count} / {total}")
+                text=f"Handtekeningen: {signed_count} / {total}")
 
     # Compact summary card
-    with st.expander("\U0001f4cb Delivery note summary", expanded=False):
+    with st.expander("\U0001f4cb Samenvatting leveringsbon", expanded=False):
         s1, s2 = st.columns(2)
         with s1:
-            st.markdown(f"**Date:** {payload.get('date', '\u2014')}")
+            st.markdown(f"**Datum:** {payload.get('date', '\u2014')}")
             st.markdown(
                 f"**DDN:** {payload.get('delivery_note_no', '\u2014')}")
             st.markdown(
-                f"**Plant:** {payload.get('plant_address', '\u2014')}")
+                f"**Centrale:** {payload.get('plant_address', '\u2014')}")
             st.markdown(
-                f"**Site:** {payload.get('site_address', '\u2014')}")
+                f"**Werf:** {payload.get('site_address', '\u2014')}")
             st.markdown(
                 f"**Transport:** {payload.get('transport_company', '\u2014')}")
         with s2:
             st.markdown(
-                f"**License plate:** {payload.get('license_plate', '\u2014')}")
+                f"**Nummerplaat:** {payload.get('license_plate', '\u2014')}")
             st.markdown(
-                f"**Departure:** {payload.get('departure_time', '\u2014')}")
+                f"**Vertrek:** {payload.get('departure_time', '\u2014')}")
             st.markdown(
-                f"**Arrival:** {payload.get('arrival_time', '\u2014')}")
+                f"**Aankomst:** {payload.get('arrival_time', '\u2014')}")
             st.markdown(
                 f"**Product:** "
                 f"{payload.get('product_mixture_type', '\u2014')}")
             st.markdown(
-                f"**Net qty:** "
+                f"**Netto hvh:** "
                 f"{payload.get('net_total_quantity_ton', '\u2014')} ton")
 
     # Signature canvas
     st.markdown("")
-    _section_heading("\U0001f58a\ufe0f", "Draw your signature",
-                     "Use your mouse or finger to sign below")
+    _section_heading("\U0001f58a\ufe0f", "Teken uw handtekening",
+                     "Gebruik uw muis of vinger om hieronder te tekenen")
 
-    signer_name = st.text_input("Your full name",
-                                placeholder="e.g. Jan De Smet")
+    signer_name = st.text_input("Uw volledige naam",
+                                placeholder="bijv. Jan De Smet")
 
     canvas = st_canvas(
         fill_color="rgba(0, 0, 0, 0)",
@@ -1417,11 +1635,11 @@ def page_sign(note_id: str, role: str) -> None:
     )
 
     st.markdown("")
-    if st.button("\u2705  Submit Signature", type="primary",
+    if st.button("\u2705  Handtekening Indienen", type="primary",
                  use_container_width=True):
         if canvas.image_data is None:
-            st.error("No signature captured. Please draw your signature "
-                     "above.")
+            st.error("Geen handtekening vastgelegd. Teken uw handtekening "
+                     "hierboven.")
             return
 
         img = Image.fromarray(canvas.image_data.astype("uint8"))
@@ -1432,18 +1650,18 @@ def page_sign(note_id: str, role: str) -> None:
                                  signer_name.strip() or None, str(sig_path))
 
         st.balloons()
-        st.success(f"\u2705 Signature saved for {label}!")
+        st.success(f"\u2705 Handtekening opgeslagen voor {label}!")
         sigs = storage.list_signatures(note_id)
         signed_count = sum(1 for r in ROLE_LABELS if r in sigs)
 
     # Signing status
     st.markdown("")
-    _section_heading("\U0001f4ca", "Signing Status")
+    _section_heading("\U0001f4ca", "Ondertekeningsstatus")
     for r in ROLE_LABELS:
         icon = "\u2705" if r in sigs else "\u23f3"
         st.markdown(
             f"{icon} **{ROLE_LABELS[r]}** \u2014 "
-            f"{'Signed' if r in sigs else 'Pending'}"
+            f"{'Ondertekend' if r in sigs else 'In afwachting'}"
         )
 
     # Fully signed
@@ -1455,10 +1673,10 @@ def page_sign(note_id: str, role: str) -> None:
             'border-radius:12px;margin:8px 0;">'
             '<div style="font-size:2rem;">\U0001f389</div>'
             '<div style="font-size:1.1rem;font-weight:700;color:#166534;">'
-            'All parties have signed!</div>'
+            'Alle partijen hebben ondertekend!</div>'
             '<div style="font-size:0.85rem;color:#15803d;">'
-            'The delivery note is complete. Download the Excel report '
-            'below.</div></div>',
+            'De leveringsbon is compleet. Download het Excel-rapport '
+            'hieronder.</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -1467,9 +1685,16 @@ def page_sign(note_id: str, role: str) -> None:
         xlsx_bytes = excel_export.build_delivery_note_xlsx(
             payload, sigs, output_path=out_path,
         )
+        # ── GPP INTEGRATION POINT B (volledig ondertekend / fully signed) ──
+        # All parties have signed — ideal moment to push final data to GPP.
+        # Uncomment once gpp_integration.py is implemented:
+        #
+        #   import gpp_integration
+        #   gpp_integration.push_to_gpp(payload, sigs)
+        # ───────────────────────────────────────────────────────────────────
 
         st.download_button(
-            label="\U0001f4e5 Download Signed Excel (xlsx)",
+            label="\U0001f4e5 Download Ondertekende Excel (xlsx)",
             data=xlsx_bytes,
             file_name=_safe_filename(note_id),
             mime="application/vnd.openxmlformats-officedocument"
@@ -1478,7 +1703,7 @@ def page_sign(note_id: str, role: str) -> None:
         )
 
         if mailer.email_enabled():
-            if st.button("\U0001f4e7 Email final Excel to all parties",
+            if st.button("\U0001f4e7 Definitieve Excel naar alle partijen e-mailen",
                          use_container_width=True):
                 emails = [
                     payload.get("emails", {}).get("client"),
@@ -1491,20 +1716,20 @@ def page_sign(note_id: str, role: str) -> None:
                     mailer.send_email(
                         emails,
                         subject=(
-                            f"Final delivery note (signed) "
+                            f"Definitieve leveringsbon (ondertekend) "
                             f"({payload.get('delivery_note_no') or note_id})"
                         ),
-                        body="All parties have signed. The final Excel "
-                             "is attached.",
+                        body="Alle partijen hebben ondertekend. De definitieve Excel "
+                             "is bijgevoegd.",
                         attachments=[(
                             _safe_filename(note_id), xlsx_bytes,
                             "application/vnd.openxmlformats-officedocument"
                             ".spreadsheetml.sheet",
                         )],
                     )
-                    st.info("\u2709\ufe0f Final Excel emailed to all parties.")
+                    st.info("\u2709\ufe0f Definitieve Excel verzonden naar alle partijen.")
                 except Exception as e:
-                    st.warning(f"Email failed: {e}")
+                    st.warning(f"E-mail mislukt: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1520,8 +1745,8 @@ def page_home() -> None:
         '<div style="text-align:center;padding:8px 0 20px 0;">'
         '<div style="font-size:1.05rem;color:#475569;max-width:700px;'
         'margin:0 auto;line-height:1.6;">'
-        'Replace paper delivery notes with a fully digital workflow \u2014 '
-        'from asphalt plant release to site receipt and multi-party signing.'
+        'Vervang papieren leveringsbonnen door een volledig digitale workflow \u2014 '
+        'van vrijgave bij de asfaltcentrale tot ontvangst op de werf en ondertekening door meerdere partijen.'
         '</div></div>',
         unsafe_allow_html=True,
     )
@@ -1533,9 +1758,9 @@ def page_home() -> None:
             '<div style="text-align:center;">'
             '<div style="font-size:1.5rem;">\u26a1</div>'
             '<div style="font-size:0.88rem;font-weight:600;color:#1e293b;">'
-            'Real-time tracking</div>'
+            'Realtime tracking</div>'
             '<div style="font-size:0.78rem;color:#64748b;">'
-            'Departure & arrival times recorded automatically</div></div>',
+            'Vertrek- & aankomsttijden worden automatisch geregistreerd</div></div>',
             padding="16px",
         )
     with b2:
@@ -1543,9 +1768,9 @@ def page_home() -> None:
             '<div style="text-align:center;">'
             '<div style="font-size:1.5rem;">\u270d\ufe0f</div>'
             '<div style="font-size:0.88rem;font-weight:600;color:#1e293b;">'
-            'Digital signatures</div>'
+            'Digitale handtekeningen</div>'
             '<div style="font-size:0.78rem;color:#64748b;">'
-            'Client, Transporter, COPRO & Permit holder sign online'
+            'Opdrachtgever, Vervoerder, COPRO & Vergunninghouder tekenen online'
             '</div></div>',
             padding="16px",
         )
@@ -1554,9 +1779,9 @@ def page_home() -> None:
             '<div style="text-align:center;">'
             '<div style="font-size:1.5rem;">\U0001f4ca</div>'
             '<div style="font-size:0.88rem;font-weight:600;color:#1e293b;">'
-            'Automatic Excel export</div>'
+            'Automatische Excel-export</div>'
             '<div style="font-size:0.78rem;color:#64748b;">'
-            'Complete signed report generated & emailed instantly'
+            'Volledig ondertekend rapport wordt automatisch gegenereerd & per e-mail verzonden'
             '</div></div>',
             padding="16px",
         )
@@ -1564,7 +1789,7 @@ def page_home() -> None:
     st.markdown("")
 
     # Workflow steps
-    _section_heading("\U0001f504", "How it works")
+    _section_heading("\U0001f504", "Hoe het werkt")
     _workflow_steps()
 
     st.markdown("")
@@ -1581,7 +1806,7 @@ def page_home() -> None:
 
 def main() -> None:
     st.set_page_config(
-        page_title="Digital Delivery Note \u2014 DIMinfr@",
+        page_title="Digitale Leveringsbon \u2014 DIMinfr@",
         page_icon="\U0001f4cb",
         layout="wide",
         initial_sidebar_state="collapsed",

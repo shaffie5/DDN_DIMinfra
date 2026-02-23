@@ -5,6 +5,16 @@ from pathlib import Path
 from typing import Any
 
 from openpyxl import Workbook
+# ── GPP INTEGRATION POINT A ────────────────────────────────────────────────
+# When the GPP workbook builder is ready, import gpp_integration here and
+# call gpp_integration.build_gpp_workbook(payload, signatures) inside
+# build_delivery_note_xlsx() just before the function returns `data`.
+#
+# Example:
+#   import gpp_integration
+#   gpp_bytes = gpp_integration.build_gpp_workbook(payload, signatures)
+#   # attach as a second sheet, save alongside, or return separately
+# ───────────────────────────────────────────────────────────────────────────
 from openpyxl.drawing.image import Image as XLImage
 from openpyxl.utils import get_column_letter
 
@@ -27,7 +37,7 @@ def build_delivery_note_xlsx(
 ) -> bytes:
     wb = Workbook()
     ws = wb.active
-    ws.title = "Delivery Note"
+    ws.title = "Leveringsbon"
 
     _set_col_widths(ws)
 
@@ -59,7 +69,7 @@ def build_delivery_note_xlsx(
         ("Net total quantity (ton)", payload.get("net_total_quantity_ton")),
     ]
 
-    ws["A1"].value = "Digital Delivery Note (Prototype)"
+    ws["A1"].value = "Digitale Leveringsbon (Prototype)"
     ws["A1"].font = ws["A1"].font.copy(bold=True, size=14)
 
     start_row = 3
@@ -69,14 +79,14 @@ def build_delivery_note_xlsx(
         ws.cell(row=r, column=2, value=v)
 
     sig_start = start_row + len(rows) + 2
-    ws.cell(row=sig_start, column=1, value="Signatures")
+    ws.cell(row=sig_start, column=1, value="Handtekeningen")
     ws.cell(row=sig_start, column=1).font = ws.cell(row=sig_start, column=1).font.copy(bold=True)
 
     sig_rows = [
-        ("Client signature", "client"),
-        ("COPRO signature", "copro"),
-        ("Transporter signature", "transporter"),
-        ("Permit Holder signature", "permit_holder"),
+        ("Handtekening opdrachtgever", "client"),
+        ("Handtekening COPRO", "copro"),
+        ("Handtekening vervoerder", "transporter"),
+        ("Handtekening vergunninghouder", "permit_holder"),
     ]
 
     for idx, (label, role) in enumerate(sig_rows, start=1):
@@ -97,9 +107,9 @@ def build_delivery_note_xlsx(
             ws.cell(row=r, column=2, value="")
             ws.cell(row=r, column=3, value="")
 
-    ws.cell(row=sig_start + 1, column=2, value="Signer name")
-    ws.cell(row=sig_start + 1, column=3, value="Signed at (UTC)")
-    ws.cell(row=sig_start + 1, column=4, value="Signature")
+    ws.cell(row=sig_start + 1, column=2, value="Naam ondertekenaar")
+    ws.cell(row=sig_start + 1, column=3, value="Ondertekend op (UTC)")
+    ws.cell(row=sig_start + 1, column=4, value="Handtekening")
 
     for c in [2, 3, 4]:
         ws.cell(row=sig_start + 1, column=c).font = ws.cell(row=sig_start + 1, column=c).font.copy(bold=True)
@@ -107,6 +117,17 @@ def build_delivery_note_xlsx(
     bio = io.BytesIO()
     wb.save(bio)
     data = bio.getvalue()
+
+    # ── GPP INTEGRATION POINT A (call site) ────────────────────────────────
+    # Populate the GPP template with the same payload + signatures here.
+    # Uncomment and complete once gpp_integration.py is implemented:
+    #
+    #   import gpp_integration
+    #   gpp_bytes = gpp_integration.build_gpp_workbook(payload, signatures)
+    #   if output_path is not None:
+    #       gpp_path = output_path.with_stem(output_path.stem + "_GPP")
+    #       gpp_path.write_bytes(gpp_bytes)
+    # ───────────────────────────────────────────────────────────────────────
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)

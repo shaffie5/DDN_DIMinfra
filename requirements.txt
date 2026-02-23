@@ -7,3 +7,5 @@ streamlit-folium>=0.20
 folium>=0.15
 geopy>=2.4
 streamlit-js-eval>=0.1
+pytesseract>=0.3
+PyMuPDF>=1.23
