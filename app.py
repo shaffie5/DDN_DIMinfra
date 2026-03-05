@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import secrets
+import gpp_integration
 from datetime import datetime
-from datetime import date, time
+from datetime import date
 from pathlib import Path
 import time as _time
 from typing import Any
@@ -1397,12 +1398,6 @@ def page_create_note() -> None:
             key="k_gpp_sheet",
             help="Welk blad in het GPP-werkboek moet worden ingevuld",
         )
-        _card(
-            '<div style="font-size:0.82rem;color:#92400e;">'
-            '\u26a0\ufe0f Deze functie is in ontwikkeling. '
-            'GPP-integratie zal beschikbaar zijn in een toekomstige versie.</div>',
-            bg="#fffbeb", border="1px solid #fde68a", padding="12px 16px",
-        )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1412,53 +1407,82 @@ def page_create_note() -> None:
 
 def _page_site_supervisor() -> None:
     """Site supervisor mode — receive a delivery."""
-    _section_heading("\U0001f3d7\ufe0f", "Levering Ontvangen",
-                     "Registreer aankomsttijd vrachtwagen voor een vrijgegeven leveringsbon")
+
+    if "arrival_registered" not in st.session_state:
+        st.session_state.arrival_registered = False
+
+    if "current_note_id" not in st.session_state:
+        st.session_state.current_note_id = None
+
+    _section_heading(
+        "\U0001f3d7\ufe0f",
+        "Levering Ontvangen",
+        "Registreer aankomsttijd vrachtwagen voor een vrijgegeven leveringsbon",
+    )
 
     _card(
         '<div style="font-size:0.85rem;color:#334155;">'
         'Voer het leveringsbonnummer in of selecteer het uit de vrijgegeven bonnen. '
         'Zodra de vrachtwagen aankomt, druk op de knop om de aankomsttijd '
         'te registreren.</div>',
-        bg="#f0fdf4", border="1px solid #bbf7d0",
+        bg="#f0fdf4",
+        border="1px solid #bbf7d0",
     )
 
     available = storage.list_delivery_note_nos(status="released", limit=200)
+
     dn = ""
     if available:
-        dn = st.selectbox("Selecteer een vrijgegeven leveringsbon",
-                          options=available, index=0)
+        dn = st.selectbox(
+            "Selecteer een vrijgegeven leveringsbon",
+            options=available,
+            index=0,
+        )
     else:
-        st.info("Nog geen vrijgegeven leveringsbonnen gevonden. "
-                "Wachten tot de centrale een bon vrijgeeft.")
+        st.info(
+            "Nog geen vrijgegeven leveringsbonnen gevonden. "
+            "Wachten tot de centrale een bon vrijgeeft."
+        )
 
     manual = st.text_input(
-        "Of voer leveringsbonnummer handmatig in", value="",
+        "Of voer leveringsbonnummer handmatig in",
+        value="",
         placeholder="bijv. DDN-2026-00142",
     )
+
     if manual.strip():
         dn = manual.strip()
 
     st.markdown("")
-    if st.button("\U0001f69b  Vrachtwagen Ontvangen \u2014 Aankomsttijd Registreren",
-                 type="primary", use_container_width=True):
+
+    # ---------------------------------------------------------
+    # ARRIVAL REGISTRATION
+    # ---------------------------------------------------------
+
+    if st.button(
+        "\U0001f69b  Vrachtwagen Ontvangen — Aankomsttijd Registreren",
+        type="primary",
+        use_container_width=True,
+        key="arrival_btn",
+    ):
+
         if not dn.strip():
             st.error("Voer het leveringsbonnummer in.")
-            return
+            st.stop()
+
         note = storage.get_note_by_delivery_note_no(dn.strip())
+
         if not note:
             st.error("Geen leveringsbon gevonden voor dit nummer.")
-            return
-        if note.get("status") not in {
-            "released", "received", "completed", "pending",
-        }:
-            st.warning("Onbekende bonnenstatus; wordt voortgezet.")
+            st.stop()
+
+        if note.get("status") == "pending":
+            st.error(
+                "Deze leveringsbon is nog niet vrijgegeven bij de asfaltcentrale."
+            )
+            st.stop()
 
         payload = note["payload"]
-        if note.get("status") == "pending":
-            st.error("Deze leveringsbon is nog niet vrijgegeven bij de "
-                     "asfaltcentrale.")
-            return
 
         now = datetime.now()
         payload["arrival_time"] = now.strftime("%H:%M")
@@ -1466,22 +1490,71 @@ def _page_site_supervisor() -> None:
 
         with storage.get_conn() as conn:
             import json
+
             conn.execute(
-                "UPDATE delivery_notes SET payload_json = ?, status = ? "
-                "WHERE id = ?",
-                (json.dumps(payload, ensure_ascii=False), "received",
-                 note["id"]),
+                "UPDATE delivery_notes SET payload_json=?, status=? WHERE id=?",
+                (
+                    json.dumps(payload, ensure_ascii=False),
+                    "received",
+                    note["id"],
+                ),
             )
 
+        st.session_state.arrival_registered = True
+        st.session_state.current_note_id = note["id"]
+
+    # ---------------------------------------------------------
+    # POST-ARRIVAL PANEL
+    # ---------------------------------------------------------
+
+    if st.session_state.arrival_registered:
+
+        note = storage.get_note(st.session_state.current_note_id)
+        payload = note["payload"]
+
+        st.success(
+            f"Aankomst geregistreerd om **{payload['arrival_time']}**."
+        )
+
         sigs = storage.list_signatures(note["id"])
+
         xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs)
-        # ── GPP INTEGRATION POINT B (aankomst / arrival) ────────────────────
-        # Push the completed delivery note to GPP here.
-        # Uncomment once gpp_integration.py is implemented:
-        #
-        #   import gpp_integration
-        #   gpp_integration.push_to_gpp(payload, sigs)
-        # ───────────────────────────────────────────────────────────────────
+
+        st.markdown("")
+
+        # -----------------------------------------------------
+        # GPP PUSH
+        # -----------------------------------------------------
+
+        if st.button(
+            "Verstuur naar GPP",
+            key="push_gpp",
+            use_container_width=True,
+        ):
+
+            try:
+
+                with st.spinner("Versturen naar GPP..."):
+
+                    result = gpp_integration.push_to_gpp(
+                        payload,
+                        sigs,
+                        log_func=st.text,
+                    )
+
+                st.success(
+                    f"Leveringsbon succesvol naar GPP verstuurd.\n{result}"
+                )
+
+            except NotImplementedError:
+                st.warning("GPP push is nog niet geïmplementeerd.")
+
+            except Exception as e:
+                st.error(f"GPP verzending mislukt: {e}")
+
+        # -----------------------------------------------------
+        # EMAIL
+        # -----------------------------------------------------
 
         emails = [
             payload.get("emails", {}).get("client"),
@@ -1502,15 +1575,16 @@ def _page_site_supervisor() -> None:
                     ),
                     body=(
                         "Aankomsttijd is geregistreerd door de "
-                        "werftoezichter. De Digitale Leveringsbon (Excel) "
-                        "is bijgevoegd."
+                        "werftoezichter. De Digitale Leveringsbon "
+                        "(Excel) is bijgevoegd."
                     ),
-                    attachments=[(
-                        _safe_filename(note["id"]),
-                        xlsx_bytes,
-                        "application/vnd.openxmlformats-officedocument"
-                        ".spreadsheetml.sheet",
-                    )],
+                    attachments=[
+                        (
+                            _safe_filename(note["id"]),
+                            xlsx_bytes,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        )
+                    ],
                 )
                 emailed = True
             except Exception as e:
@@ -1520,34 +1594,50 @@ def _page_site_supervisor() -> None:
         if emailed:
             storage.mark_completed(note["id"])
             st.success(
-                f"\u2705 Aankomst geregistreerd om **{payload['arrival_time']}**. "
                 f"Excel gegenereerd en verzonden per e-mail."
             )
             _card(
                 '<div style="font-size:0.85rem;color:#166534;">'
                 f'<b>Verzonden naar:</b> {", ".join(emails)}</div>',
-                bg="#f0fdf4", border="1px solid #bbf7d0",
+                bg="#f0fdf4",
+                border="1px solid #bbf7d0",
             )
         else:
             if emails and not mailer.email_enabled():
-                st.info("E-mail niet geconfigureerd; Excel gegenereerd om te downloaden.")
-            elif not emails:
-                st.info("Geen e-mailadressen van ontvangers opgegeven; Excel gegenereerd "
-                        "om te downloaden.")
-            else:
-                st.success(
-                    f"\u2705 Aankomst geregistreerd om "
-                    f"**{payload['arrival_time']}**."
+                st.info(
+                    "E-mail niet geconfigureerd; Excel gegenereerd om te downloaden."
                 )
+
+            elif not emails:
+
+                st.info(
+                    "Geen e-mailadressen opgegeven; Excel gegenereerd om te downloaden."
+                )
+
+        # -----------------------------------------------------
+        # EXCEL DOWNLOAD
+        # -----------------------------------------------------
 
         st.download_button(
             label="\U0001f4e5 Download Excel (xlsx)",
             data=xlsx_bytes,
             file_name=_safe_filename(note["id"]),
-            mime="application/vnd.openxmlformats-officedocument"
-                 ".spreadsheetml.sheet",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
+
+        st.markdown("")
+
+        # -----------------------------------------------------
+        # RESET FOR NEXT DELIVERY
+        # -----------------------------------------------------
+
+        if st.button("Nieuwe levering verwerken", key="reset_page"):
+
+            st.session_state.arrival_registered = False
+            st.session_state.current_note_id = None
+
+            st.rerun()
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1557,6 +1647,9 @@ def _page_site_supervisor() -> None:
 
 def page_sign(note_id: str, role: str) -> None:
     label = ROLE_LABELS.get(role, role)
+
+    if f"signed_{note_id}_{role}" not in st.session_state:
+        st.session_state[f"signed_{note_id}_{role}"] = False
 
     note = storage.get_note(note_id)
     if not note:
@@ -1569,7 +1662,7 @@ def page_sign(note_id: str, role: str) -> None:
     total = len(ROLE_LABELS)
 
     # Status badge
-    if role in sigs:
+    if role in sigs or st.session_state[f"signed_{note_id}_{role}"]:
         st.markdown(
             '<div style="display:inline-block;padding:4px 16px;'
             'background:#dcfce7;color:#166534;border-radius:999px;'
@@ -1594,25 +1687,20 @@ def page_sign(note_id: str, role: str) -> None:
 
     # Compact summary card
     EM_DASH = "—"
-
-    with st.expander("📋 Samenvatting leveringsbon", expanded=False):
+    with st.expander("Samenvatting leveringsbon", expanded=False):
         s1, s2 = st.columns(2)
-
         with s1:
             st.markdown(f"**Datum:** {payload.get('date', EM_DASH)}")
             st.markdown(f"**DDN:** {payload.get('delivery_note_no', EM_DASH)}")
             st.markdown(f"**Centrale:** {payload.get('plant_address', EM_DASH)}")
             st.markdown(f"**Werf:** {payload.get('site_address', EM_DASH)}")
             st.markdown(f"**Transport:** {payload.get('transport_company', EM_DASH)}")
-
         with s2:
             st.markdown(f"**Nummerplaat:** {payload.get('license_plate', EM_DASH)}")
             st.markdown(f"**Vertrek:** {payload.get('departure_time', EM_DASH)}")
             st.markdown(f"**Aankomst:** {payload.get('arrival_time', EM_DASH)}")
             st.markdown(f"**Product:** {payload.get('product_mixture_type', EM_DASH)}")
-            st.markdown(
-                f"**Netto hvh:** {payload.get('net_total_quantity_ton', EM_DASH)} ton"
-            )
+            st.markdown(f"**Netto hvh:** {payload.get('net_total_quantity_ton', EM_DASH)} ton")
 
     # Signature canvas
     st.markdown("")
@@ -1633,36 +1721,40 @@ def page_sign(note_id: str, role: str) -> None:
     )
 
     st.markdown("")
+
+    # --- Submit signature button ---
     if st.button("\u2705  Handtekening Indienen", type="primary",
-                 use_container_width=True):
+                 use_container_width=True, key=f"submit_sig_{note_id}_{role}"):
+
         if canvas.image_data is None:
-            st.error("Geen handtekening vastgelegd. Teken uw handtekening "
-                     "hierboven.")
-            return
+            st.error("Geen handtekening vastgelegd. Teken uw handtekening hierboven.")
+        else:
+            img = Image.fromarray(canvas.image_data.astype("uint8"))
+            sig_path = storage.SIGNATURES_DIR / f"{note_id}_{role}.png"
+            img.save(sig_path)
 
-        img = Image.fromarray(canvas.image_data.astype("uint8"))
-        sig_path = storage.SIGNATURES_DIR / f"{note_id}_{role}.png"
-        img.save(sig_path)
+            storage.upsert_signature(note_id, role,
+                                     signer_name.strip() or None, str(sig_path))
 
-        storage.upsert_signature(note_id, role,
-                                 signer_name.strip() or None, str(sig_path))
+            st.session_state[f"signed_{note_id}_{role}"] = True
+            st.balloons()
+            st.success(f"\u2705 Handtekening opgeslagen voor {label}!")
 
-        st.balloons()
-        st.success(f"\u2705 Handtekening opgeslagen voor {label}!")
-        sigs = storage.list_signatures(note_id)
-        signed_count = sum(1 for r in ROLE_LABELS if r in sigs)
+            # Refresh signature list and count
+            sigs = storage.list_signatures(note_id)
+            signed_count = sum(1 for r in ROLE_LABELS if r in sigs)
 
-    # Signing status
+    # --- Signing status ---
     st.markdown("")
     _section_heading("\U0001f4ca", "Ondertekeningsstatus")
     for r in ROLE_LABELS:
-        icon = "\u2705" if r in sigs else "\u23f3"
+        icon = "\u2705" if r in sigs or st.session_state.get(f"signed_{note_id}_{r}", False) else "\u23f3"
         st.markdown(
-            f"{icon} **{ROLE_LABELS[r]}** \u2014 "
-            f"{'Ondertekend' if r in sigs else 'In afwachting'}"
+            f"{icon} **{ROLE_LABELS[r]}** — "
+            f"{'Ondertekend' if r in sigs or st.session_state.get(f'signed_{note_id}_{r}', False) else 'In afwachting'}"
         )
 
-    # Fully signed
+    # --- Fully signed ---
     if storage.is_fully_signed(note_id):
         st.markdown("")
         st.markdown(
@@ -1680,29 +1772,30 @@ def page_sign(note_id: str, role: str) -> None:
 
         data_dir = Path(__file__).resolve().parent / "data" / "exports"
         out_path = data_dir / _safe_filename(note_id)
-        xlsx_bytes = excel_export.build_delivery_note_xlsx(
-            payload, sigs, output_path=out_path,
-        )
-        # ── GPP INTEGRATION POINT B (volledig ondertekend / fully signed) ──
-        # All parties have signed — ideal moment to push final data to GPP.
-        # Uncomment once gpp_integration.py is implemented:
-        #
-        #   import gpp_integration
-        #   gpp_integration.push_to_gpp(payload, sigs)
-        # ───────────────────────────────────────────────────────────────────
+        xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs, output_path=out_path)
+
+        st.markdown("")
+        if st.button("Verstuur aankomst naar GPP", use_container_width=True, key=f"push_gpp_{note_id}"):
+            try:
+                with st.spinner("Versturen naar GPP..."):
+                    gpp_integration.push_to_gpp(payload, sigs, log_func=st.text)
+                st.success("Aankomst succesvol naar GPP verstuurd.")
+            except NotImplementedError:
+                st.warning("GPP push is nog niet geïmplementeerd.")
+            except Exception as e:
+                st.error(f"GPP verzending mislukt: {e}")
 
         st.download_button(
             label="\U0001f4e5 Download Ondertekende Excel (xlsx)",
             data=xlsx_bytes,
             file_name=_safe_filename(note_id),
-            mime="application/vnd.openxmlformats-officedocument"
-                 ".spreadsheetml.sheet",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
         )
 
         if mailer.email_enabled():
             if st.button("\U0001f4e7 Definitieve Excel naar alle partijen e-mailen",
-                         use_container_width=True):
+                         use_container_width=True, key=f"email_final_{note_id}"):
                 emails = [
                     payload.get("emails", {}).get("client"),
                     payload.get("emails", {}).get("transporter"),
@@ -1713,16 +1806,12 @@ def page_sign(note_id: str, role: str) -> None:
                 try:
                     mailer.send_email(
                         emails,
-                        subject=(
-                            f"Definitieve leveringsbon (ondertekend) "
-                            f"({payload.get('delivery_note_no') or note_id})"
-                        ),
-                        body="Alle partijen hebben ondertekend. De definitieve Excel "
-                             "is bijgevoegd.",
+                        subject=(f"Definitieve leveringsbon (ondertekend) "
+                                 f"({payload.get('delivery_note_no') or note_id})"),
+                        body="Alle partijen hebben ondertekend. De definitieve Excel is bijgevoegd.",
                         attachments=[(
                             _safe_filename(note_id), xlsx_bytes,
-                            "application/vnd.openxmlformats-officedocument"
-                            ".spreadsheetml.sheet",
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         )],
                     )
                     st.info("\u2709\ufe0f Definitieve Excel verzonden naar alle partijen.")
