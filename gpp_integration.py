@@ -103,7 +103,15 @@ Integration layer between this DDN application and the GPP Excel tool.
 
 from __future__ import annotations
 
+import shutil
+import tempfile
+
 from typing import Any
+from pathlib import Path
+from datetime import datetime
+from gpp_link.config import Config
+from gpp_link.standalone import standalone
+from gpp_link.file_manager import FileManager
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,12 +183,63 @@ def read_gpp_workbook(xlsx_bytes: bytes) -> dict[str, Any]:
 def push_to_gpp(
     payload: dict[str, Any],
     signatures: dict[str, dict[str, Any]],
-) -> None:
+    log_func=print,
+) -> str:
     """Send the completed delivery note to GPP (API call, file drop, etc.).
 
     Called from app.py at the GPP INTEGRATION POINT B markers after the
     Excel has been built.  Implement whichever transport GPP requires:
     REST API, SFTP drop, shared network folder, etc.
+
+    Transfer the generated DDN Excel into the GPP workbook
+    using the standalone Excel transfer engine.
     """
     # TODO: implement GPP push / export
-    raise NotImplementedError("GPP push not yet implemented.")
+    # raise NotImplementedError("GPP push not yet implemented.")
+
+    log_func("DONE!!!!!")
+    BASE_DIR = Path(__file__).resolve().parent
+    OUTPUT_DIR = BASE_DIR / "output"
+
+    # Validate configuration
+    config_valid, config_errors = Config.validate()
+    if not config_valid:
+        raise RuntimeError(f"GPP configuration invalid: {config_errors}")
+
+    # Create isolated processing environment
+    # session_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+    with tempfile.TemporaryDirectory() as tmpdir_raw:
+        tmpdir = Path(tmpdir_raw)
+
+        source_path = tmpdir / "ddn_source.xlsx"
+        target_path = tmpdir / Config.TARGET_TEMPLATE.name
+        mapping_path = tmpdir / Config.MAPPING_FILE.name
+
+        # Build DDN Excel from payload
+        from excel_export import build_delivery_note_xlsx
+        xlsx_bytes = build_delivery_note_xlsx(payload, signatures)
+        source_path.write_bytes(xlsx_bytes)
+
+        # Copy template + mapping
+        if not FileManager.copy_file_safe(Config.TARGET_TEMPLATE, target_path):
+            raise RuntimeError("Failed to prepare GPP template.")
+
+        if not FileManager.copy_file_safe(Config.MAPPING_FILE, mapping_path):
+            raise RuntimeError("Failed to prepare mapping file.")
+
+        # Run standalone processor
+        result_msg = standalone(
+            str(source_path),
+            str(target_path),
+            str(mapping_path),
+        )
+
+        # Persist final result
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        final_name = f"GPP_updated_{timestamp}.xlsx"
+        final_path = OUTPUT_DIR / final_name
+
+        shutil.copy2(target_path, final_path)
+
+        return f"{result_msg}\nSaved to: {final_path}"

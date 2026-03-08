@@ -1,0 +1,312 @@
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\mapping_vn.csv
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\mapping_vn.csv
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-05 17:18:54 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmpfer2v5yw
+2026-03-05 17:18:55 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\ddn_source.xlsx
+2026-03-05 17:18:55 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-05 17:18:55 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-05 17:18:55 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpjekj3nfh\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\mapping_vn.csv
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\mapping_vn.csv
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmp1g0_p802
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\ddn_source.xlsx
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-05 17:19:16 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-05 17:19:16 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpijnjo2uo\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\mapping_vn.csv
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\mapping_vn.csv
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmpo8rggelj
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\ddn_source.xlsx
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-05 17:38:15 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-05 17:38:15 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpb1i0bu02\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\mapping_vn.csv
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\mapping_vn.csv
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmp92xvdrhj
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\ddn_source.xlsx
+2026-03-05 17:38:29 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-05 17:38:29 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-05 17:38:30 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmp9nbi81pt\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\mapping_vn.csv
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\mapping_vn.csv
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmp53ohjc9a
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\ddn_source.xlsx
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-08 15:01:53 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-08 15:01:53 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpww5rrhwn\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\mapping_vn.csv
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\mapping_vn.csv
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmp4jz8sfhr
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\ddn_source.xlsx
+2026-03-08 15:04:20 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-08 15:04:20 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-08 15:04:21 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpl0lj4vqd\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\mapping_vn.csv
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\mapping_vn.csv
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmpfthkrzff
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\ddn_source.xlsx
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-08 15:12:59 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-08 15:12:59 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmp9i0zu835\PIONEERS GPP TOOL_20250331.xlsx
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:39 - Processing: source=C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx, target=C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\PIONEERS GPP TOOL_20250331.xlsx, mapping=C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\mapping_vn.csv
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:130 - Loaded mapping file with 29 rows using utf-8-sig encoding
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:168 - Validated 29 mapping rows (encoding=utf-8-sig)
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:52 - Loaded 29 valid mappings from C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\mapping_vn.csv
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:66 - Starting Excel update process: 29 mappings
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:604 - Processing in temporary directory: C:\Users\wadaems\AppData\Local\Temp\tmpj5wwnp2y
+2026-03-08 15:16:27 [INFO    ] gpp_link.config:76 - Loaded 1033 shared strings
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:280 - Source sheet 'GPP_input' not found in C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\ddn_source.xlsx
+2026-03-08 15:16:28 [INFO    ] gpp_link.config:300 - Extracted 0 values from 0 sheets
+2026-03-08 15:16:28 [WARNING ] gpp_link.config:629 - No values extracted from source workbook
+2026-03-08 15:16:28 [INFO    ] gpp_link.config:75 - Successfully processed 29 mappings, updated target workbook: C:\Users\wadaems\AppData\Local\Temp\tmpaw7p8dpj\PIONEERS GPP TOOL_20250331.xlsx
