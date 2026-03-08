@@ -1,0 +1,30 @@
+SourceSheet,SourceCell,TargetSheet,TargetCell
+GPP_input,B1,Input,B7
+GPP_input,B2,Input,B8
+GPP_input,B3,Input,B6
+GPP_input,B5,Input,B14
+GPP_input,B6,Input,B9
+GPP_input,B7,Input,B15
+GPP_input,B8,Input,B16
+GPP_input,B9,Input,B21
+GPP_input,B10,Input,B22
+GPP_input,B11,Input,B39
+GPP_input,B12,Input,B40
+GPP_input,B13,Input,B41
+GPP_input,B14,Input,B42
+GPP_input,B15,Input,B43
+GPP_input,B18,Input,B46
+GPP_input,B21,Input,B49
+GPP_input,B23,Input,B51
+GPP_input,B29,A3 - Production,C68
+GPP_input,B30,A3 - Production,C70
+GPP_input,B30,A3 - Production,C71
+GPP_input,B30,A3 - Production,C72
+GPP_input,B31,A3 - Production,C73
+GPP_input,B31,A3 - Production,C74
+GPP_input,B31,A3 - Production,C75
+GPP_input,B32,A3 - Production,C76
+GPP_input,B32,A3 - Production,C77
+GPP_input,B32,A3 - Production,C78
+GPP_input,B33,A3 - Production,C83
+GPP_input,B33,A3 - Production,C84
