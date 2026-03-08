@@ -1542,6 +1542,15 @@ def _page_site_supervisor() -> None:
                         log_func=st.text,
                     )
 
+                # Extract path from result string
+                path_line = result.split("Saved to:")[-1].strip()
+                gpp_file_path = Path(path_line)
+
+                if gpp_file_path.exists():
+                    st.session_state.gpp_xlsx_bytes = gpp_file_path.read_bytes()
+                else:
+                    st.warning("GPP Excel bestand niet gevonden.")
+
                 st.success(
                     f"Leveringsbon succesvol naar GPP verstuurd.\n{result}"
                 )
@@ -1618,9 +1627,11 @@ def _page_site_supervisor() -> None:
         # EXCEL DOWNLOAD
         # -----------------------------------------------------
 
+        download_bytes = st.session_state.get("gpp_xlsx_bytes", None) or xlsx_bytes
+
         st.download_button(
             label="\U0001f4e5 Download Excel (xlsx)",
-            data=xlsx_bytes,
+            data=download_bytes,
             file_name=_safe_filename(note["id"]),
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True,
