@@ -212,9 +212,11 @@ def push_to_gpp(
     with tempfile.TemporaryDirectory() as tmpdir_raw:
         tmpdir = Path(tmpdir_raw)
 
+        mapping_path_real = Config.get_mapping_file("DDN")
+
         source_path = tmpdir / "ddn_source.xlsx"
         target_path = tmpdir / Config.TARGET_TEMPLATE.name
-        mapping_path = tmpdir / Config.MAPPING_FILE.name
+        mapping_path = tmpdir / mapping_path_real.name
 
         # Build DDN Excel from payload
         from excel_export import build_delivery_note_xlsx
@@ -225,7 +227,7 @@ def push_to_gpp(
         if not FileManager.copy_file_safe(Config.TARGET_TEMPLATE, target_path):
             raise RuntimeError("Failed to prepare GPP template.")
 
-        if not FileManager.copy_file_safe(Config.MAPPING_FILE, mapping_path):
+        if not FileManager.copy_file_safe(mapping_path_real, mapping_path):
             raise RuntimeError("Failed to prepare mapping file.")
 
         # Run standalone processor
