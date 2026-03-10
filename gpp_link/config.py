@@ -11,7 +11,7 @@ class Config:
     """Global configuration settings for the PIONEERS GPP tool."""
 
     BASE_DIR: Path = Path(__file__).parent.resolve()
-    TARGET_TEMPLATE: Path = BASE_DIR / "PIONEERS GPP TOOL_20250331.xlsx"
+    TARGET_TEMPLATE: Path = BASE_DIR / "PIONEERS GPP TOOL_20260310.xlsx"
     GLOBAL_LOG_FILE: Path = BASE_DIR / "upload_log.txt"
 
     # -------------------------------
