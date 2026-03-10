@@ -277,7 +277,21 @@ ROLE_LABELS = {
     "permit_holder": "Vergunninghouder",
 }
 
-ENERGY_SOURCES = ["Diesel", "Biodiesel", "Electric", "Electric_green"]
+ENERGY_SOURCES = ["Diesel_Euro5","Diesel_Euro6", "Biodiesel_4.5%","Biodiesel_7%","Biodiesel_10%","Biodiesel_20%","Biodiesel_100%","Electric","Electric_green"]
+
+# Mapping from old (legacy) energy source names to the current list entries.
+# Applied when loading payloads that were created before the dropdown was updated.
+_ENERGY_SOURCE_MIGRATION: dict[str, str] = {
+    "Diesel": "Diesel_Euro5",
+    "Biodiesel": "Biodiesel_100%",
+}
+
+
+def _migrate_energy_source(payload: dict) -> None:
+    """Translate legacy ``energy_source`` values to current names in-place."""
+    old = payload.get("energy_source")
+    if old and old in _ENERGY_SOURCE_MIGRATION:
+        payload["energy_source"] = _ENERGY_SOURCE_MIGRATION[old]
 
 DEMO_DATA = {
     "k_delivery_note_no": "DDN-2026-00142",
@@ -309,6 +323,7 @@ DEMO_DATA = {
     "k_email_transporter": "dispatch@vanhoeck-transport.be",
     "k_email_copro": "inspectie@copro.eu",
     "k_email_permit_holder": "vergunning@wegenbouw.be",
+    "k_energy_source": "Diesel_Euro5",
 }
 
 
@@ -975,7 +990,8 @@ def page_create_note() -> None:
             st.text_input("Transporttype", value=transport_type, disabled=True)
         with d2:
             energy_source = st.selectbox("Energiebron",
-                                         options=ENERGY_SOURCES, index=0)
+                                         options=ENERGY_SOURCES, index=0,
+                                         key="k_energy_source")
 
         plant_point = geo.GeoPoint(
             lat=float(st.session_state.get("plant_lat", 50.85)),
@@ -1483,6 +1499,7 @@ def _page_site_supervisor() -> None:
             st.stop()
 
         payload = note["payload"]
+        _migrate_energy_source(payload)
 
         now = datetime.now()
         payload["arrival_time"] = now.strftime("%H:%M")
@@ -1511,6 +1528,7 @@ def _page_site_supervisor() -> None:
 
         note = storage.get_note(st.session_state.current_note_id)
         payload = note["payload"]
+        _migrate_energy_source(payload)
 
         st.success(
             f"Aankomst geregistreerd om **{payload['arrival_time']}**."
@@ -1668,6 +1686,7 @@ def page_sign(note_id: str, role: str) -> None:
         return
 
     payload = note["payload"]
+    _migrate_energy_source(payload)
     sigs = storage.list_signatures(note_id)
     signed_count = sum(1 for r in ROLE_LABELS if r in sigs)
     total = len(ROLE_LABELS)
