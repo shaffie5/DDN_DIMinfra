@@ -1781,6 +1781,14 @@ def page_sign(note_id: str, role: str) -> None:
             unsafe_allow_html=True,
         )
 
+        # Reload latest payload & signatures so the Excel reflects any
+        # updates made after this page was first opened (e.g. arrival_time
+        # set by the site supervisor).
+        fresh_note = storage.get_note(note_id)
+        if fresh_note:
+            payload = fresh_note["payload"]
+        sigs = storage.list_signatures(note_id)
+
         data_dir = Path(__file__).resolve().parent / "data" / "exports"
         out_path = data_dir / _safe_filename(note_id)
         xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs, output_path=out_path)
