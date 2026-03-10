@@ -287,12 +287,11 @@ _ENERGY_SOURCE_MIGRATION: dict[str, str] = {
 }
 
 
-def _migrate_energy_source(payload: dict) -> dict:
-    """Return *payload* with ``energy_source`` translated to the current name."""
+def _migrate_energy_source(payload: dict) -> None:
+    """Translate legacy ``energy_source`` values to current names in-place."""
     old = payload.get("energy_source")
     if old and old in _ENERGY_SOURCE_MIGRATION:
         payload["energy_source"] = _ENERGY_SOURCE_MIGRATION[old]
-    return payload
 
 
 DEMO_DATA = {
