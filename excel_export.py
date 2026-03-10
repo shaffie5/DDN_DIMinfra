@@ -82,6 +82,15 @@ def build_delivery_note_xlsx(
     ws.cell(row=sig_start, column=1, value="Handtekeningen")
     ws.cell(row=sig_start, column=1).font = ws.cell(row=sig_start, column=1).font.copy(bold=True)
 
+    # Column headers for the signature section
+    hdr_row = sig_start + 1
+    ws.cell(row=hdr_row, column=1, value="Rol")
+    ws.cell(row=hdr_row, column=2, value="Naam ondertekenaar")
+    ws.cell(row=hdr_row, column=3, value="Ondertekend op (UTC)")
+    ws.cell(row=hdr_row, column=4, value="Handtekening")
+    for c in [1, 2, 3, 4]:
+        ws.cell(row=hdr_row, column=c).font = ws.cell(row=hdr_row, column=c).font.copy(bold=True)
+
     sig_rows = [
         ("Handtekening opdrachtgever", "client"),
         ("Handtekening COPRO", "copro"),
@@ -90,7 +99,7 @@ def build_delivery_note_xlsx(
     ]
 
     for idx, (label, role) in enumerate(sig_rows, start=1):
-        r = sig_start + idx
+        r = hdr_row + idx
         ws.cell(row=r, column=1, value=label)
         meta = signatures.get(role)
         if meta:
@@ -106,13 +115,6 @@ def build_delivery_note_xlsx(
         else:
             ws.cell(row=r, column=2, value="")
             ws.cell(row=r, column=3, value="")
-
-    ws.cell(row=sig_start + 1, column=2, value="Naam ondertekenaar")
-    ws.cell(row=sig_start + 1, column=3, value="Ondertekend op (UTC)")
-    ws.cell(row=sig_start + 1, column=4, value="Handtekening")
-
-    for c in [2, 3, 4]:
-        ws.cell(row=sig_start + 1, column=c).font = ws.cell(row=sig_start + 1, column=c).font.copy(bold=True)
 
     bio = io.BytesIO()
     wb.save(bio)
