@@ -9,3 +9,6 @@ geopy>=2.4
 streamlit-js-eval>=0.1
 pytesseract>=0.3
 PyMuPDF>=1.23
+lxml>=4.9
+werkzeug>=2.3
+flask>=2.3
