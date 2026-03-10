@@ -32,3 +32,7 @@ The prototype uses:
 - OpenStreetMap rendering via `folium` + `streamlit-folium`
 - Address lookup via Nominatim (`geopy`)
 - Driving distance via the public OSRM demo endpoint (fallback to straight-line if unavailable)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for instructions on how to commit changes to this repository.
