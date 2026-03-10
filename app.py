@@ -277,7 +277,7 @@ ROLE_LABELS = {
     "permit_holder": "Vergunninghouder",
 }
 
-ENERGY_SOURCES = ["Diesel", "Biodiesel", "Electric", "Electric_green"]
+ENERGY_SOURCES = ["Diesel_Euro5","Diesel_Euro6", "Biodiesel_4.5%","Biodiesel_7%","Biodiesel_10%","Biodiesel_20%","Biodiesel_100%","Electric","Electric_green"]
 
 DEMO_DATA = {
     "k_delivery_note_no": "DDN-2026-00142",
