@@ -22,3 +22,6 @@ __pycache__/
 .idea/
 
 .gitignore
+data/ddn.sqlite
+data/exports/
+data/signatures/
