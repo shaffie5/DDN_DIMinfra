@@ -1787,7 +1787,7 @@ def page_sign(note_id: str, role: str) -> None:
         fresh_note = storage.get_note(note_id)
         if fresh_note:
             payload = fresh_note["payload"]
-        sigs = storage.list_signatures(note_id)
+            sigs = storage.list_signatures(note_id)
 
         data_dir = Path(__file__).resolve().parent / "data" / "exports"
         out_path = data_dir / _safe_filename(note_id)
