@@ -9,3 +9,5 @@ geopy>=2.4
 streamlit-js-eval>=0.1
 pytesseract>=0.3
 PyMuPDF>=1.23
+xlwings>=0.33
+plotly>=5.0
