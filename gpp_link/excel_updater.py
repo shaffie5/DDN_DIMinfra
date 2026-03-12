@@ -524,6 +524,43 @@ class ExcelUpdater:
         # Handle text and None via shared strings
         self._create_text_cell_value(cell_node, value)
 
+    def _force_full_recalculation(self, xl_dir: Path) -> None:
+        """
+        Ensure Excel performs a full recalculation when the workbook opens.
+        """
+        workbook_xml = xl_dir / "workbook.xml"
+        if not workbook_xml.exists():
+            return
+
+        try:
+            tree = et.parse(workbook_xml, XML_PARSER)
+            root = tree.getroot()
+            nsmap = self.get_nsmap_with_main(root)
+
+            calc_pr = self.find_ns(root, ".//main:calcPr", nsmap)
+
+            if calc_pr is None:
+                calc_pr = et.SubElement(root, f"{{{MAIN_NS}}}calcPr")
+
+            # Force recalculation
+            calc_pr.set("fullCalcOnLoad", "1")
+            calc_pr.set("calcId", "0")
+
+            workbook_xml.write_bytes(
+                et.tostring(
+                    root,
+                    xml_declaration=True,
+                    encoding="UTF-8",
+                    standalone="yes",
+                    pretty_print=False,
+                )
+            )
+
+            logger.debug("Workbook configured for full recalculation on load")
+
+        except Exception as ex:
+            logger.warning(f"Failed to set fullCalcOnLoad: {ex}")
+
     # -------------------- Workbook relationships -------------------- #
     def _build_sheet_name_to_file_map(self, xl_dir: Path) -> Dict[str, Path]:
         """Build mapping from sheet names to XML files using workbook relationships."""
@@ -622,6 +659,9 @@ class ExcelUpdater:
             self._load_styles_from_xl(xl_dir)
             self.shared_strings.load(xl_dir)
             self.shared_strings._modified = False  # reset modified flag after load
+
+            # Force Excel to recalculate formulas on open
+            self._force_full_recalculation(xl_dir)
 
             # Extract source values
             src_values = ExcelUpdater.extract_source_values(source, mappings)

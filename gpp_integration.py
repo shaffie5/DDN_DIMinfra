@@ -242,6 +242,9 @@ def push_to_gpp(
         final_name = f"GPP_updated_{timestamp}.xlsx"
         final_path = OUTPUT_DIR / final_name
 
+        # Create directory only if it doesn't exist
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+
         shutil.copy2(target_path, final_path)
 
         return f"{result_msg}\nSaved to: {final_path}"
