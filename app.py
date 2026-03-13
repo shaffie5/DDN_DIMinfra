@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import secrets
 import gpp_integration
+import gpp_engine
 from datetime import datetime
 from datetime import date
 from pathlib import Path
@@ -105,6 +106,144 @@ def _stepper(steps: list[tuple[str, str]], active: int) -> None:
         'flex-wrap:wrap;margin:8px 0 20px 0;">' + connector.join(items) + '</div>',
         unsafe_allow_html=True,
     )
+
+
+def _render_gpp_results(results: dict) -> None:
+    """Render GPP environmental impact results (focused on DDN_Results_TP)."""
+    import pandas as pd
+    import plotly.graph_objects as go
+
+    st.markdown("---")
+    st.subheader("Asphalt Transport Results (DDN)")
+
+    # ── Delivery parameters ─────────────────────────────────
+    tp_bruto = results.get("transport_bruto_ton")
+    tp_dist = results.get("transport_distance_km")
+
+    energy_src = results.get("energy_source")
+
+    mc1, mc2, mc3 = st.columns(3)
+    if tp_bruto is not None:
+        mc1.metric("Bruto gewicht", f"{tp_bruto:.2f} ton")
+    if tp_dist is not None:
+        mc2.metric("Transportafstand", f"{tp_dist:.1f} km")
+    mc3.metric("Energiebron", energy_src or "–")
+
+    # ── Total Single Score (headline) ───────────────────────
+    tp_total = results.get("transport_single_total", {})
+    if tp_total.get("total_mpt") is not None:
+        ton_label = f" ({tp_bruto:.2f} ton)" if tp_bruto is not None else ""
+        st.metric(
+            f"Total Single Score{ton_label}",
+            f"{tp_total['total_mpt']:.4f} mPt",
+        )
+
+    # ── Dropdown: select impact category → chart ────────────
+    tp_impacts = results.get("transport_impacts", [])
+    if tp_impacts:
+        categories = [r["category"] for r in tp_impacts if r.get("category")]
+
+        selected = st.selectbox(
+            "Selecteer impactcategorie",
+            options=categories,
+            index=categories.index("Climate change") if "Climate change" in categories else 0,
+            key="gpp_impact_select",
+        )
+
+        # Find the selected row — show only total for bruto weight
+        sel_row = next((r for r in tp_impacts if r["category"] == selected), None)
+        if sel_row:
+            total = sel_row.get("total") or 0
+            ton_bar = f" ({tp_bruto:.2f} ton)" if tp_bruto is not None else ""
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[f"Totaal{ton_bar}"],
+                y=[total],
+                marker_color=["#10b981"],
+                text=[f"{total:.4e}"],
+                textposition="outside",
+                width=[0.4],
+            ))
+            fig.update_layout(
+                title=dict(text=f"{selected}", font=dict(size=16)),
+                yaxis_title="Impact waarde",
+                template="plotly_white",
+                height=400,
+                margin=dict(t=50, b=40),
+            )
+            st.plotly_chart(fig, use_container_width=True, key="gpp_selected_chart")
+
+        # ── Overview: all 19 categories (total for delivery) ──
+        totals = [
+            {"category": r["category"], "total": r.get("total") or 0}
+            for r in tp_impacts if r.get("category")
+        ]
+        df_all = pd.DataFrame(totals)
+        colors = ["#10b981" if c != selected else "#f59e0b" for c in df_all["category"]]
+
+        fig_all = go.Figure()
+        fig_all.add_trace(go.Bar(
+            y=df_all["category"],
+            x=df_all["total"],
+            orientation="h",
+            marker_color=colors,
+        ))
+        ton_title = f" voor {tp_bruto:.2f} ton" if tp_bruto is not None else ""
+        fig_all.update_layout(
+            title=dict(text=f"Alle impactcategorieën{ton_title}", font=dict(size=14)),
+            xaxis_title="Impact waarde (let op: eenheden verschillen per categorie)",
+            template="plotly_white",
+            height=600,
+            yaxis=dict(autorange="reversed"),
+            margin=dict(l=250, t=50, b=50),
+        )
+        st.plotly_chart(fig_all, use_container_width=True, key="gpp_overview_chart")
+
+    # ── Data table (collapsed) ──────────────────────────────
+    if tp_impacts:
+        ton_label_col = f" voor {tp_bruto:.2f} ton" if tp_bruto is not None else ""
+        with st.expander("Tabel: alle impactcategorieën", expanded=False):
+            df_table = pd.DataFrame([
+                {"Impactcategorie": r["category"], f"Impact totaal{ton_label_col}": r.get("total")}
+                for r in tp_impacts if r.get("category")
+            ])
+            st.dataframe(df_table.set_index("Impactcategorie"), use_container_width=True)
+
+    tp_single = results.get("transport_single_scores", [])
+    if tp_single:
+        with st.expander("Tabel: single scores per categorie", expanded=False):
+            df_ss = pd.DataFrame([
+                {"Impactcategorie": r["category"], "mPt totaal": r.get("total_mpt")}
+                for r in tp_single if r.get("category")
+            ])
+            if tp_total.get("total_mpt") is not None:
+                total_row = pd.DataFrame([{
+                    "Impactcategorie": "Totaal Single Score",
+                    "mPt totaal": tp_total.get("total_mpt"),
+                }])
+                df_ss = pd.concat([df_ss, total_row], ignore_index=True)
+            st.dataframe(df_ss.set_index("Impactcategorie"), use_container_width=True)
+
+    # ── Dashboard mixture info (collapsed) ──────────────────
+    dash = results.get("dashboard") or {}
+    if any(dash.values()):
+        with st.expander("Mengsel-informatie", expanded=False):
+            cols = st.columns(3)
+            labels = [
+                ("mixture_id", "Mengsel ID"),
+                ("mixture_sb250", "SB250-type"),
+                ("mixture_en", "EN-type"),
+                ("plant", "Asfaltcentrale"),
+                ("temperature", "Temperatuur"),
+                ("binder_pct", "Bindmiddel %"),
+                ("binder_repl", "Bindmiddel vervanging"),
+                ("bulk_density", "Bulk dichtheid"),
+            ]
+            for i, (key, label) in enumerate(labels):
+                v = dash.get(key)
+                if v is not None:
+                    cols[i % 3].markdown(f"**{label}:** {v}")
 
 
 def _workflow_steps() -> None:
@@ -1640,6 +1779,34 @@ def _page_site_supervisor() -> None:
                 st.info(
                     "Geen e-mailadressen opgegeven; Excel gegenereerd om te downloaden."
                 )
+
+        # -----------------------------------------------------
+        # GPP ENVIRONMENTAL IMPACT CALCULATION
+        # -----------------------------------------------------
+
+        st.markdown("")
+        _section_heading(
+            "\U0001f33f",
+            "Milieu-impactberekening (GPP Tool)",
+            "Bereken de levenscyclus-milieueffecten van deze levering via het GPP-rekenmodel",
+        )
+
+        if st.button(
+            "\U0001f52c  Bereken Milieu-impact",
+            key="calc_gpp_env",
+            use_container_width=True,
+            type="primary",
+        ):
+            try:
+                with st.spinner("Excel rekenmodel wordt uitgevoerd..."):
+                    engine = gpp_engine.GPPEngine()
+                    gpp_results = engine.calculate(payload)
+                    st.session_state["gpp_results"] = gpp_results
+            except Exception as e:
+                st.error(f"GPP-berekening mislukt: {e}")
+
+        if "gpp_results" in st.session_state:
+            _render_gpp_results(st.session_state["gpp_results"])
 
         # -----------------------------------------------------
         # EXCEL DOWNLOAD
