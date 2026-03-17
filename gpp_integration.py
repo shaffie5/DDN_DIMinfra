@@ -197,7 +197,7 @@ def push_to_gpp(
     # TODO: implement GPP push / export
     # raise NotImplementedError("GPP push not yet implemented.")
 
-    log_func("DONE!!!!!")
+    # log_func("DONE!!!!!")
     BASE_DIR = Path(__file__).resolve().parent
     OUTPUT_DIR = BASE_DIR / "output"
 
