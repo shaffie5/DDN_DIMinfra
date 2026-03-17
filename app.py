@@ -914,7 +914,7 @@ def page_create_note() -> None:
     # Quick-fill for demos
     _, demo_col, _ = st.columns([2, 1, 2])
     with demo_col:
-        if st.button("\U0001f4cb Demogegevens laden", use_container_width=True,
+        if st.button("\U0001f4cb Digitale Leveringsbon inladen", use_container_width=True,
                      help="Vul alle velden in met voorbeeldgegevens"):
             _load_demo_data()
             st.rerun()
