@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import random
 import secrets
 import gpp_integration
 import gpp_engine
@@ -469,6 +470,13 @@ DEMO_DATA = {
 def _load_demo_data() -> None:
     """Populate session state with demo values for all form fields."""
     for key, value in DEMO_DATA.items():
+        if key == "k_delivery_note_no":
+            prefix, year, number = value.split("-")
+
+            # Generate a random number with the same width as the original
+            new_number = f"{random.randint(0, 10 ** len(number) - 1):0{len(number)}d}"
+
+            value = f"{prefix}-{year}-{new_number}"
         st.session_state[key] = value
 
 
@@ -1639,6 +1647,14 @@ def _page_site_supervisor() -> None:
 
         payload = note["payload"]
         _migrate_energy_source(payload)
+
+        # TEMPORARY WORKAROUND !!!!
+        if payload["bruto_kg"] == 0.0:
+            payload["bruto_kg"] = 28450.0
+        if payload["tare_weight_empty_kg"] == 0.0:
+            payload["tare_weight_empty_kg"] = 14200.0
+        if payload["net_total_quantity_ton"] == 0.0:
+            payload["net_total_quantity_ton"] = 14.25
 
         now = datetime.now()
         payload["arrival_time"] = now.strftime("%H:%M")
