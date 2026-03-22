@@ -1649,12 +1649,12 @@ def _page_site_supervisor() -> None:
         _migrate_energy_source(payload)
 
         # TEMPORARY WORKAROUND !!!!
-        if payload["bruto_kg"] == 0.0:
-            payload["bruto_kg"] = 28450.0
-        if payload["tare_weight_empty_kg"] == 0.0:
-            payload["tare_weight_empty_kg"] = 14200.0
-        if payload["net_total_quantity_ton"] == 0.0:
-            payload["net_total_quantity_ton"] = 14.25
+        # if payload["bruto_kg"] == 0.0:
+        #     payload["bruto_kg"] = 28450.0
+        # if payload["tare_weight_empty_kg"] == 0.0:
+        #     payload["tare_weight_empty_kg"] = 14200.0
+        # if payload["net_total_quantity_ton"] == 0.0:
+        #     payload["net_total_quantity_ton"] = 14.25
 
         now = datetime.now()
         payload["arrival_time"] = now.strftime("%H:%M")
