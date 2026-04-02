@@ -1,48 +1,51 @@
 {% extends "base.html" %}
-{% block title %}Werftoezichter{% endblock %}
+{% block title %}Site Supervisor{% endblock %}
 
 {% block content %}
-<div class="mb-4">
-    <h3 class="fw-bold">🏗️ Levering Ontvangen</h3>
-    <p class="text-muted">Registreer aankomsttijd vrachtwagen voor een vrijgegeven leveringsbon</p>
-</div>
+<div class="wizard-panel">
+    <div class="panel-header">
+        <h2 class="panel-title">Receive Delivery</h2>
+        <p class="panel-subtitle">Register truck arrival time for a released delivery note</p>
+    </div>
 
-<div class="alert alert-success border-success">
-    Voer het leveringsbonnummer in of selecteer het uit de vrijgegeven bonnen.
-    Zodra de vrachtwagen aankomt, druk op de knop om de aankomsttijd te registreren.
-</div>
+    <div class="panel-section">
+        <p class="section-help" style="margin-top:0;">
+            Enter the delivery note number or select it from the released notes below.
+            When the truck arrives, press the button to record the arrival time.
+        </p>
 
-<form method="POST" action="{{ url_for('receive_delivery') }}">
-    <div class="card shadow-sm mb-4">
-        <div class="card-body">
+        <form method="POST" action="{{ url_for('receive_delivery') }}">
             {% if available_notes %}
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Selecteer een vrijgegeven leveringsbon</label>
-                <select class="form-select" name="delivery_note_no" id="noteSelect">
-                    {% for dn in available_notes %}
-                    <option value="{{ dn }}">{{ dn }}</option>
-                    {% endfor %}
-                </select>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="noteSelect">Select a released delivery note</label>
+                    <select class="form-input" name="delivery_note_no" id="noteSelect">
+                        {% for dn in available_notes %}
+                        <option value="{{ dn }}">{{ dn }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
             </div>
             {% else %}
-            <div class="alert alert-info">
-                Nog geen vrijgegeven leveringsbonnen gevonden.
-                Wachten tot de centrale een bon vrijgeeft.
+            <div class="status-warning mb-3">
+                No released delivery notes found. Waiting for the plant to release a note.
             </div>
             {% endif %}
 
-            <div class="mb-3">
-                <label class="form-label fw-semibold">Of voer leveringsbonnummer handmatig in</label>
-                <input type="text" class="form-control" id="manualDn"
-                       placeholder="bijv. DDN-2026-00142">
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="manualDn">Or enter delivery note number manually</label>
+                    <input type="text" class="form-input" id="manualDn"
+                           placeholder="e.g. DDN-2026-00142">
+                </div>
             </div>
 
             <button type="submit" class="btn btn-primary btn-lg w-100">
-                🚛 Vrachtwagen Ontvangen — Aankomsttijd Registreren
+                Confirm Truck Arrival
             </button>
-        </div>
+        </form>
     </div>
-</form>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Ondertekenen als {{ role_label }}{% endblock %}
+{% block title %}Sign as {{ role_label }}{% endblock %}
 
 {% block extra_head %}
 <style>
     #signatureCanvas {
-        border: 2px solid #cbd5e1;
-        border-radius: 12px;
+        border: 2px solid var(--border);
+        border-radius: var(--radius);
         cursor: crosshair;
         touch-action: none;
         background: #fff;
@@ -14,124 +14,120 @@
 {% endblock %}
 
 {% block content %}
-<!-- Status Badge -->
-{% if is_signed %}
-<div class="badge bg-success fs-6 mb-3 px-3 py-2">
-    ✅ Ondertekend als {{ role_label }}
-</div>
-{% else %}
-<div class="badge bg-warning text-dark fs-6 mb-3 px-3 py-2">
-    ✍️ Wacht op handtekening — {{ role_label }}
-</div>
-{% endif %}
+<div class="wizard-panel">
 
-<h3 class="fw-bold mb-3">✍️ Ondertekenen als {{ role_label }}</h3>
+    <!-- Header -->
+    <div class="panel-header">
+        <h2 class="panel-title">Sign as {{ role_label }}</h2>
+        {% if is_signed %}
+        <div class="status-success" style="display:inline-block;padding:6px 16px;border-radius:var(--radius);font-size:0.9rem;">
+            Signed as {{ role_label }}
+        </div>
+        {% else %}
+        <div style="display:inline-block;padding:6px 16px;background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--radius);font-size:0.9rem;color:var(--warning);">
+            Awaiting signature — {{ role_label }}
+        </div>
+        {% endif %}
+    </div>
 
-<!-- Signing Progress -->
-{% set signed_count = sigs|length %}
-{% set total = role_labels|length %}
-{% set pct = (signed_count / total * 100)|int %}
-<div class="mb-4">
-    <div class="d-flex justify-content-between small mb-1">
-        <span>Handtekeningen: {{ signed_count }} / {{ total }}</span>
-        <span>{{ pct }}%</span>
-    </div>
-    <div class="progress" style="height:10px;">
-        <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
-    </div>
-</div>
-
-<!-- Delivery Summary -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white" data-bs-toggle="collapse" data-bs-target="#summaryCollapse" role="button">
-        <strong>Samenvatting leveringsbon</strong>
-        <i class="fas fa-chevron-down float-end"></i>
-    </div>
-    <div class="collapse" id="summaryCollapse">
-        <div class="card-body">
-            <div class="row g-2">
-                <div class="col-md-6"><strong>Datum:</strong> {{ payload.get('date', '—') }}</div>
-                <div class="col-md-6"><strong>DDN:</strong> {{ payload.get('delivery_note_no', '—') }}</div>
-                <div class="col-md-6"><strong>Centrale:</strong> {{ payload.get('plant_address', '—') }}</div>
-                <div class="col-md-6"><strong>Werf:</strong> {{ payload.get('site_address', '—') }}</div>
-                <div class="col-md-6"><strong>Transport:</strong> {{ payload.get('transport_company', '—') }}</div>
-                <div class="col-md-6"><strong>Nummerplaat:</strong> {{ payload.get('license_plate', '—') }}</div>
-                <div class="col-md-6"><strong>Vertrek:</strong> {{ payload.get('departure_time', '—') }}</div>
-                <div class="col-md-6"><strong>Aankomst:</strong> {{ payload.get('arrival_time', '—') }}</div>
-                <div class="col-md-6"><strong>Product:</strong> {{ payload.get('product_mixture_type', '—') }}</div>
-                <div class="col-md-6"><strong>Netto hvh:</strong> {{ payload.get('net_total_quantity_ton', '—') }} ton</div>
-            </div>
+    <!-- Signing Progress -->
+    {% set signed_count = sigs|length %}
+    {% set total = role_labels|length %}
+    {% set pct = (signed_count / total * 100)|int %}
+    <div class="panel-section">
+        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-bottom:6px;">
+            <span>Signatures: {{ signed_count }} / {{ total }}</span>
+            <span>{{ pct }}%</span>
+        </div>
+        <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;">
+            <div style="width:{{ pct }}%;height:100%;background:var(--accent);border-radius:4px;transition:width 0.3s;"></div>
         </div>
     </div>
-</div>
 
-<!-- Signature Area -->
-{% if not is_signed %}
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">🖊️ Teken uw handtekening</h5>
-        <small class="text-muted">Gebruik uw muis of vinger om hieronder te tekenen</small>
+    <!-- Delivery Summary (collapsible) -->
+    <div class="panel-section">
+        <details>
+            <summary style="cursor:pointer;font-weight:600;padding:8px 0;">Delivery Note Summary</summary>
+            <div class="summary-card" style="margin-top:8px;">
+                <div class="summary-section">
+                    <div class="summary-row"><span>Date</span><span>{{ payload.get('date', '—') }}</span></div>
+                    <div class="summary-row"><span>DDN</span><span>{{ payload.get('delivery_note_no', '—') }}</span></div>
+                    <div class="summary-row"><span>Plant</span><span>{{ payload.get('plant_address', '—') }}</span></div>
+                    <div class="summary-row"><span>Site</span><span>{{ payload.get('site_address', '—') }}</span></div>
+                    <div class="summary-row"><span>Carrier</span><span>{{ payload.get('transport_company', '—') }}</span></div>
+                    <div class="summary-row"><span>License Plate</span><span>{{ payload.get('license_plate', '—') }}</span></div>
+                    <div class="summary-row"><span>Departure</span><span>{{ payload.get('departure_time', '—') }}</span></div>
+                    <div class="summary-row"><span>Arrival</span><span>{{ payload.get('arrival_time', '—') }}</span></div>
+                    <div class="summary-row"><span>Product</span><span>{{ payload.get('product_mixture_type', '—') }}</span></div>
+                    <div class="summary-row"><span>Net Quantity</span><span>{{ payload.get('net_total_quantity_ton', '—') }} ton</span></div>
+                </div>
+            </div>
+        </details>
     </div>
-    <div class="card-body">
-        <div class="mb-3">
-            <label class="form-label fw-semibold">Uw volledige naam</label>
-            <input type="text" class="form-control" id="signerName" placeholder="bijv. Jan De Smet">
+
+    <!-- Signature Area -->
+    {% if not is_signed %}
+    <div class="panel-section">
+        <div class="section-label">Draw Your Signature</div>
+        <p class="section-help">Use your mouse or finger to sign below</p>
+
+        <div class="field-group" style="margin-bottom:12px;">
+            <label class="field-label">Your Full Name</label>
+            <input type="text" class="form-input" id="signerName" placeholder="e.g. Jan De Smet">
         </div>
 
         <canvas id="signatureCanvas" width="700" height="180"></canvas>
 
-        <div class="mt-2 d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="clearCanvasBtn">
-                <i class="fas fa-eraser me-1"></i>Wissen
-            </button>
+        <div style="margin-top:8px;">
+            <button type="button" class="btn-ghost" id="clearCanvasBtn">Clear</button>
         </div>
 
-        <button type="button" class="btn btn-primary btn-lg w-100 mt-3" id="submitSigBtn">
-            ✅ Handtekening Indienen
+        <button type="button" class="btn-confirm" id="submitSigBtn" style="width:100%;margin-top:16px;">
+            Submit Signature
         </button>
-        <div id="sigStatus" class="mt-2" style="display:none;"></div>
+        <div id="sigStatus" style="display:none;margin-top:8px;"></div>
     </div>
-</div>
-{% endif %}
+    {% endif %}
 
-<!-- Signing Status -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">📊 Ondertekeningsstatus</h5>
-    </div>
-    <div class="card-body" id="signingStatus">
-        {% for r, lbl in role_labels.items() %}
-        <div class="d-flex align-items-center gap-2 mb-2">
-            {% if r in sigs %}
-            <span class="text-success">✅</span>
-            <strong>{{ lbl }}</strong> — Ondertekend
-            {% else %}
-            <span class="text-muted">⏳</span>
-            <strong>{{ lbl }}</strong> — In afwachting
-            {% endif %}
+    <!-- Signing Status -->
+    <div class="panel-section">
+        <div class="section-label">Signing Status</div>
+        <div id="signingStatus">
+            {% for r, lbl in role_labels.items() %}
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
+                {% if r in sigs %}
+                <span style="color:var(--success);font-weight:600;">Signed</span>
+                <span style="font-weight:500;">{{ lbl }}</span>
+                {% else %}
+                <span style="color:var(--text-muted);">Pending</span>
+                <span style="font-weight:500;">{{ lbl }}</span>
+                {% endif %}
+            </div>
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
+
+    <!-- Fully Signed Panel -->
+    {% if fully_signed %}
+    <div class="panel-section" style="text-align:center;background:var(--success-bg);border-radius:var(--radius);padding:24px;">
+        <h3 style="color:var(--success);margin-bottom:8px;">All Parties Have Signed</h3>
+        <p style="color:var(--success);">The delivery note is complete. Download the Excel report below.</p>
+    </div>
+
+    <!-- GPP Push -->
+    <div class="panel-section">
+        <button class="btn-ghost" id="pushGppSignBtn" data-note-id="{{ note_id }}" style="width:100%;">
+            Push Arrival to GPP
+        </button>
+        <div id="gppSignStatus" style="display:none;margin-top:8px;"></div>
+
+        <a href="{{ url_for('download_excel', note_id=note_id) }}" class="btn-confirm" style="display:block;text-align:center;text-decoration:none;margin-top:12px;">
+            Download Signed Excel (xlsx)
+        </a>
+    </div>
+    {% endif %}
+
 </div>
-
-<!-- Fully Signed Panel -->
-{% if fully_signed %}
-<div class="text-center p-4 rounded-3 mb-4" style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);">
-    <div class="fs-1">🎉</div>
-    <h4 class="fw-bold text-success">Alle partijen hebben ondertekend!</h4>
-    <p class="text-success">De leveringsbon is compleet. Download het Excel-rapport hieronder.</p>
-</div>
-
-<!-- GPP Push -->
-<button class="btn btn-outline-primary btn-lg w-100 mb-3" id="pushGppSignBtn" data-note-id="{{ note_id }}">
-    <i class="fas fa-upload me-1"></i>Verstuur aankomst naar GPP
-</button>
-<div id="gppSignStatus" class="mb-3" style="display:none;"></div>
-
-<a href="{{ url_for('download_excel', note_id=note_id) }}" class="btn btn-success btn-lg w-100">
-    📥 Download Ondertekende Excel (xlsx)
-</a>
-{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
@@ -144,7 +140,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let drawing = false;
     let hasDrawn = false;
 
-    // Resize canvas to container
     function resizeCanvas() {
         const rect = canvas.parentElement.getBoundingClientRect();
         canvas.width = Math.min(rect.width - 30, 700);
@@ -177,7 +172,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     document.getElementById('submitSigBtn').addEventListener('click', async function() {
         if (!hasDrawn) {
-            showToast('Teken eerst uw handtekening.', 'warning');
+            showToast('Please draw your signature first.', 'warning');
             return;
         }
 
@@ -187,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         this.disabled = true;
         status.style.display = 'block';
-        status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Opslaan...';
+        status.innerHTML = '<span class="spinner"></span> Saving...';
 
         try {
             const formData = new URLSearchParams();
@@ -204,16 +199,15 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await resp.json();
 
             if (data.success) {
-                status.innerHTML = '<div class="alert alert-success">✅ ' + data.message + '</div>';
+                status.innerHTML = '<div class="status-success" style="padding:12px 16px;border-radius:var(--radius);">' + data.message + '</div>';
                 showToast(data.message, 'success');
-                // Reload after brief delay to show updated status
                 setTimeout(() => location.reload(), 1500);
             } else {
-                status.innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+                status.innerHTML = '<div class="status-error" style="padding:12px 16px;border-radius:var(--radius);">' + data.error + '</div>';
                 this.disabled = false;
             }
         } catch(e) {
-            status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+            status.innerHTML = '<div class="status-error" style="padding:12px 16px;border-radius:var(--radius);">Error: ' + e.message + '</div>';
             this.disabled = false;
         }
     });
@@ -224,7 +218,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const status = document.getElementById('gppSignStatus');
         this.disabled = true;
         status.style.display = 'block';
-        status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Versturen naar GPP...';
+        status.innerHTML = '<span class="spinner"></span> Pushing to GPP...';
 
         try {
             const resp = await fetch('/api/push-gpp', {
@@ -234,13 +228,13 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             const data = await resp.json();
             if (data.success) {
-                status.innerHTML = '<div class="alert alert-success">' + data.message + '</div>';
+                status.innerHTML = '<div class="status-success" style="padding:12px 16px;border-radius:var(--radius);">' + data.message + '</div>';
             } else {
-                status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
+                status.innerHTML = '<div class="status-warning" style="padding:12px 16px;border-radius:var(--radius);">' + (data.error || 'Failed') + '</div>';
                 this.disabled = false;
             }
         } catch(e) {
-            status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+            status.innerHTML = '<div class="status-error" style="padding:12px 16px;border-radius:var(--radius);">Error: ' + e.message + '</div>';
             this.disabled = false;
         }
     });

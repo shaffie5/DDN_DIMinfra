@@ -3,79 +3,56 @@
 
 {% block content %}
 <!-- Hero -->
-<div class="text-center mb-4">
-    <h1 class="fw-bold display-6">📋 Digitale Leveringsbon</h1>
-    <p class="text-muted mx-auto" style="max-width:700px;">
-        Vervang papieren leveringsbonnen door een volledig digitale workflow —
-        van vrijgave bij de asfaltcentrale tot ontvangst op de werf en ondertekening door meerdere partijen.
+<div class="hero-section">
+    <h1 class="hero-title">Digital Delivery Note</h1>
+    <p class="hero-subtitle">
+        Replace paper delivery notes with a fully digital workflow &mdash;
+        from release at the asphalt plant to site confirmation and multi-party signing.
     </p>
 </div>
 
-<!-- Benefits -->
-<div class="row g-3 mb-5">
-    <div class="col-md-4">
-        <div class="card h-100 text-center border-0 shadow-sm">
-            <div class="card-body">
-                <div class="fs-1 mb-2">⚡</div>
-                <h6 class="fw-bold">Realtime tracking</h6>
-                <small class="text-muted">Vertrek- & aankomsttijden worden automatisch geregistreerd</small>
-            </div>
-        </div>
+<!-- Features -->
+<div class="feature-grid">
+    <div class="feature-card">
+        <h3>Real-time Tracking</h3>
+        <p>Departure and arrival times are recorded automatically</p>
     </div>
-    <div class="col-md-4">
-        <div class="card h-100 text-center border-0 shadow-sm">
-            <div class="card-body">
-                <div class="fs-1 mb-2">✍️</div>
-                <h6 class="fw-bold">Digitale handtekeningen</h6>
-                <small class="text-muted">Opdrachtgever, Vervoerder, COPRO & Vergunninghouder tekenen online</small>
-            </div>
-        </div>
+    <div class="feature-card">
+        <h3>Digital Signatures</h3>
+        <p>Client, Transporter, COPRO and Permit Holder sign online</p>
     </div>
-    <div class="col-md-4">
-        <div class="card h-100 text-center border-0 shadow-sm">
-            <div class="card-body">
-                <div class="fs-1 mb-2">📊</div>
-                <h6 class="fw-bold">Automatische Excel-export</h6>
-                <small class="text-muted">Volledig ondertekend rapport wordt automatisch gegenereerd & per e-mail verzonden</small>
-            </div>
-        </div>
+    <div class="feature-card">
+        <h3>Automatic Excel Export</h3>
+        <p>Fully signed report is generated and emailed automatically</p>
     </div>
 </div>
 
-<!-- Workflow Steps -->
-<h5 class="fw-bold mb-3"><i class="fas fa-sync-alt me-2"></i>Hoe het werkt</h5>
-<div class="row g-3 mb-5">
+<!-- Workflow -->
+<h2 style="font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:0.75rem;">How it works</h2>
+<div class="workflow-steps">
     {% set steps = [
-        ("🏭", "Asfaltcentrale", "Maak en geef de leveringsbon vrij met product-, route- en conformiteitsgegevens"),
-        ("🚛", "Transport", "Vrachtwagen vertrekt — vertrektijd en route worden automatisch geregistreerd"),
-        ("🏗️", "Levering op werf", "Werftoezichter ontvangt de vrachtwagen en bevestigt de aankomsttijd"),
-        ("✍️", "Handtekeningen", "Alle partijen tekenen digitaal — Excel-rapport wordt automatisch gegenereerd"),
-        ("📊", "GPP Tool", "Gegevens vloeien in de Excel-gebaseerde GPP-planningstool voor milieu-impactberekening"),
+        ("1", "Asphalt Plant", "Create and release the delivery note with product, route and compliance data"),
+        ("2", "Transport", "Truck departs — departure time and route are registered automatically"),
+        ("3", "Site Delivery", "Site supervisor receives the truck and confirms arrival time"),
+        ("4", "Signatures", "All parties sign digitally — Excel report is generated automatically"),
+        ("5", "GPP Tool", "Data flows into the GPP planning tool for environmental impact calculation"),
     ] %}
-    {% for icon, title, desc in steps %}
-    <div class="col">
-        <div class="card h-100 text-center border-0 shadow-sm">
-            <div class="card-body">
-                <div class="fs-2 mb-2">{{ icon }}</div>
-                <div class="fw-bold small mb-1">Stap {{ loop.index }}: {{ title }}</div>
-                <small class="text-muted">{{ desc }}</small>
-            </div>
-        </div>
+    {% for num, title, desc in steps %}
+    <div class="workflow-step">
+        <div class="workflow-step-num">{{ num }}</div>
+        <h3>{{ title }}</h3>
+        <p>{{ desc }}</p>
     </div>
     {% endfor %}
 </div>
 
-<!-- Action Buttons -->
-<div class="row g-3 justify-content-center mb-5">
-    <div class="col-md-4">
-        <a href="{{ url_for('create_note_page') }}" class="btn btn-primary btn-lg w-100 shadow-sm">
-            <i class="fas fa-plus-circle me-2"></i>Nieuwe Leveringsbon
-        </a>
-    </div>
-    <div class="col-md-4">
-        <a href="{{ url_for('site_supervisor_page') }}" class="btn btn-success btn-lg w-100 shadow-sm">
-            <i class="fas fa-hard-hat me-2"></i>Werftoezichter Modus
-        </a>
-    </div>
+<!-- Actions -->
+<div class="home-actions">
+    <a href="{{ url_for('create_note_page') }}" class="btn btn-primary btn-lg">
+        New Delivery Note
+    </a>
+    <a href="{{ url_for('site_supervisor_page') }}" class="btn btn-ghost btn-lg">
+        Site Supervisor Mode
+    </a>
 </div>
 {% endblock %}

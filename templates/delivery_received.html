@@ -1,81 +1,78 @@
 {% extends "base.html" %}
-{% block title %}Levering Ontvangen{% endblock %}
+{% block title %}Delivery Received{% endblock %}
 
 {% block content %}
-<div class="text-center mb-4">
-    <div class="fs-1 mb-2">🎉</div>
-    <h2 class="fw-bold text-success">Aankomst geregistreerd!</h2>
-    <p class="text-muted">Aankomsttijd: <strong>{{ payload.arrival_time }}</strong></p>
-</div>
+<div class="wizard-panel">
 
-<!-- Delivery Summary -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">📋 Leveringsgegevens</h5>
+    <!-- Success Header -->
+    <div class="panel-header">
+        <h2 class="panel-title">Arrival Registered</h2>
+        <p class="section-help">Arrival time: <strong>{{ payload.arrival_time }}</strong></p>
     </div>
-    <div class="card-body">
-        <div class="row g-2">
-            <div class="col-md-6"><strong>DDN:</strong> {{ payload.delivery_note_no }}</div>
-            <div class="col-md-6"><strong>Datum:</strong> {{ payload.date }}</div>
-            <div class="col-md-6"><strong>Vertrek:</strong> {{ payload.departure_time }}</div>
-            <div class="col-md-6"><strong>Aankomst:</strong> {{ payload.arrival_time }}</div>
-            <div class="col-md-6"><strong>Transport:</strong> {{ payload.transport_company }}</div>
-            <div class="col-md-6"><strong>Nummerplaat:</strong> {{ payload.license_plate }}</div>
-            <div class="col-md-6"><strong>Product:</strong> {{ payload.product_mixture_type }}</div>
-            <div class="col-md-6"><strong>Afstand:</strong> {{ "%.1f"|format(payload.distance_km) }} km</div>
-            <div class="col-md-6"><strong>Netto:</strong> {{ payload.net_total_quantity_ton }} ton</div>
-            <div class="col-md-6"><strong>Energiebron:</strong> {{ payload.energy_source }}</div>
+
+    <!-- Delivery Summary -->
+    <div class="panel-section">
+        <div class="section-label">Delivery Details</div>
+        <div class="summary-card">
+            <div class="summary-section">
+                <div class="summary-row"><span>DDN</span><span>{{ payload.delivery_note_no }}</span></div>
+                <div class="summary-row"><span>Date</span><span>{{ payload.date }}</span></div>
+                <div class="summary-row"><span>Departure</span><span>{{ payload.departure_time }}</span></div>
+                <div class="summary-row"><span>Arrival</span><span>{{ payload.arrival_time }}</span></div>
+                <div class="summary-row"><span>Carrier</span><span>{{ payload.transport_company }}</span></div>
+                <div class="summary-row"><span>License Plate</span><span>{{ payload.license_plate }}</span></div>
+                <div class="summary-row"><span>Product</span><span>{{ payload.product_mixture_type }}</span></div>
+                <div class="summary-row"><span>Distance</span><span>{{ "%.1f"|format(payload.distance_km) }} km</span></div>
+                <div class="summary-row"><span>Net Quantity</span><span>{{ payload.net_total_quantity_ton }} ton</span></div>
+                <div class="summary-row"><span>Energy Source</span><span>{{ payload.energy_source }}</span></div>
+            </div>
         </div>
     </div>
-</div>
 
-{% if emailed %}
-<div class="alert alert-success">
-    ✅ Excel gegenereerd en verzonden per e-mail.
-    <div class="small mt-1"><b>Verzonden naar:</b> {{ emails|join(', ') }}</div>
-</div>
-{% elif emails and not emailed %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle me-1"></i>
-    E-mail niet geconfigureerd; Excel gegenereerd om te downloaden.
-</div>
-{% else %}
-<div class="alert alert-info">
-    <i class="fas fa-info-circle me-1"></i>
-    Geen e-mailadressen opgegeven; Excel gegenereerd om te downloaden.
-</div>
-{% endif %}
-
-<!-- GPP Actions -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0"><i class="fas fa-leaf me-1 text-success"></i> Milieu-impactberekening (GPP Tool)</h5>
-        <small class="text-muted">Bereken de levenscyclus-milieueffecten van deze levering via het GPP-rekenmodel</small>
-    </div>
-    <div class="card-body">
-        <div class="d-flex flex-wrap gap-2 mb-3">
-            <button class="btn btn-outline-primary" id="pushGppBtn" data-note-id="{{ note.id }}">
-                <i class="fas fa-upload me-1"></i>Verstuur naar GPP
-            </button>
-            <button class="btn btn-primary" id="calcGppBtn" data-note-id="{{ note.id }}">
-                <i class="fas fa-microscope me-1"></i> Bereken Milieu-impact
-            </button>
+    <!-- Email Status -->
+    <div class="panel-section">
+        {% if emailed %}
+        <div class="status-success" style="padding:12px 16px;border-radius:var(--radius);">
+            Excel generated and sent by email.
+            <div style="font-size:0.85rem;margin-top:4px;"><strong>Sent to:</strong> {{ emails|join(', ') }}</div>
         </div>
-        <div id="gppStatus" class="mt-2" style="display:none;"></div>
-        <div id="gppResults" class="mt-3" style="display:none;"></div>
+        {% elif emails and not emailed %}
+        <div style="padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);">
+            Email not configured; Excel generated for download.
+        </div>
+        {% else %}
+        <div style="padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);">
+            No email addresses provided; Excel generated for download.
+        </div>
+        {% endif %}
     </div>
-</div>
 
-<!-- Download -->
-<a href="{{ url_for('download_excel', note_id=note.id) }}" class="btn btn-success btn-lg w-100 mb-3">
-    📥 Download Excel (xlsx)
-</a>
+    <!-- GPP Actions -->
+    <div class="panel-section">
+        <div class="section-label">Environmental Impact Calculation (GPP Tool)</div>
+        <p class="section-help">Calculate the life-cycle environmental impacts of this delivery via the GPP calculation model</p>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
+            <button class="btn-ghost" id="pushGppBtn" data-note-id="{{ note.id }}">Push to GPP</button>
+            <button class="btn-primary" id="calcGppBtn" data-note-id="{{ note.id }}">Calculate Impact</button>
+        </div>
+        <div id="gppStatus" style="display:none;"></div>
+        <div id="gppResults" style="display:none;"></div>
+    </div>
 
-<!-- Reset -->
-<div class="text-center">
-    <a href="{{ url_for('site_supervisor_page') }}" class="btn btn-outline-secondary">
-        Nieuwe levering verwerken
-    </a>
+    <!-- Download -->
+    <div class="panel-section">
+        <a href="{{ url_for('download_excel', note_id=note.id) }}" class="btn-confirm" style="display:block;text-align:center;text-decoration:none;">
+            Download Excel (xlsx)
+        </a>
+    </div>
+
+    <!-- Reset -->
+    <div class="panel-section" style="text-align:center;">
+        <a href="{{ url_for('site_supervisor_page') }}" class="btn-ghost" style="text-decoration:none;">
+            Process New Delivery
+        </a>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -85,7 +82,7 @@ document.getElementById('pushGppBtn')?.addEventListener('click', async function(
     const noteId = this.dataset.noteId;
     const status = document.getElementById('gppStatus');
     status.style.display = 'block';
-    status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Versturen naar GPP...';
+    status.innerHTML = '<span class="spinner"></span> Pushing to GPP...';
 
     try {
         const resp = await fetch('/api/push-gpp', {
@@ -95,12 +92,12 @@ document.getElementById('pushGppBtn')?.addEventListener('click', async function(
         });
         const data = await resp.json();
         if (data.success) {
-            status.innerHTML = '<div class="alert alert-success">' + data.message + '</div>';
+            status.innerHTML = '<div class="status-success" style="padding:12px 16px;border-radius:var(--radius);">' + data.message + '</div>';
         } else {
-            status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
+            status.innerHTML = '<div class="status-warning" style="padding:12px 16px;border-radius:var(--radius);">' + (data.error || 'Failed') + '</div>';
         }
     } catch(e) {
-        status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+        status.innerHTML = '<div class="status-error" style="padding:12px 16px;border-radius:var(--radius);">Error: ' + e.message + '</div>';
     }
 });
 
@@ -109,7 +106,7 @@ document.getElementById('calcGppBtn')?.addEventListener('click', async function(
     const status = document.getElementById('gppStatus');
     const results = document.getElementById('gppResults');
     status.style.display = 'block';
-    status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Excel rekenmodel wordt uitgevoerd...';
+    status.innerHTML = '<span class="spinner"></span> Running Excel calculation model...';
 
     try {
         const resp = await fetch('/api/calculate-gpp', {
@@ -119,91 +116,83 @@ document.getElementById('calcGppBtn')?.addEventListener('click', async function(
         });
         const data = await resp.json();
         if (data.success) {
-            status.innerHTML = '<div class="alert alert-success">Berekening voltooid!</div>';
+            status.innerHTML = '<div class="status-success" style="padding:12px 16px;border-radius:var(--radius);">Calculation complete!</div>';
             renderGppResults(data.results);
         } else {
-            status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
+            status.innerHTML = '<div class="status-warning" style="padding:12px 16px;border-radius:var(--radius);">' + (data.error || 'Failed') + '</div>';
         }
     } catch(e) {
-        status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+        status.innerHTML = '<div class="status-error" style="padding:12px 16px;border-radius:var(--radius);">Error: ' + e.message + '</div>';
     }
 });
 
 function renderGppResults(r) {
     const container = document.getElementById('gppResults');
     container.style.display = 'block';
-    let html = '<h5 class="fw-bold mb-3">Asphalt Transport Results (DDN)</h5>';
+    let html = '<div class="section-label" style="margin-top:16px;">Asphalt Transport Results (DDN)</div>';
 
-    // ── Delivery parameter metrics ──────────────────────────
-    html += '<div class="row g-3 mb-3">';
+    // Delivery parameter metrics
+    html += '<div class="field-row" style="gap:12px;margin:12px 0;">';
     if (r.transport_bruto_ton != null) {
-        html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Bruto gewicht</div><div class="fs-5 fw-bold">' + r.transport_bruto_ton.toFixed(2) + ' ton</div></div></div>';
+        html += '<div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;"><div style="font-size:0.8rem;color:var(--text-secondary);">Gross Weight</div><div style="font-size:1.2rem;font-weight:600;">' + r.transport_bruto_ton.toFixed(2) + ' ton</div></div>';
     }
     if (r.transport_distance_km != null) {
-        html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Transportafstand</div><div class="fs-5 fw-bold">' + r.transport_distance_km.toFixed(1) + ' km</div></div></div>';
+        html += '<div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;"><div style="font-size:0.8rem;color:var(--text-secondary);">Transport Distance</div><div style="font-size:1.2rem;font-weight:600;">' + r.transport_distance_km.toFixed(1) + ' km</div></div>';
     }
-    html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Energiebron</div><div class="fs-5 fw-bold">' + (r.energy_source || '–') + '</div></div></div>';
+    html += '<div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;"><div style="font-size:0.8rem;color:var(--text-secondary);">Energy Source</div><div style="font-size:1.2rem;font-weight:600;">' + (r.energy_source || '–') + '</div></div>';
     html += '</div>';
 
-    // ── Total Single Score (headline) ───────────────────────
+    // Total Single Score
     if (r.transport_single_total && r.transport_single_total.total_mpt != null) {
         const tonLabel = r.transport_bruto_ton != null ? ' (' + r.transport_bruto_ton.toFixed(2) + ' ton)' : '';
-        html += '<div class="alert alert-info d-flex align-items-center gap-2 mb-3">'
-              + '<i class="fas fa-chart-line fa-lg"></i>'
-              + '<div><strong>Total Single Score' + tonLabel + ':</strong> '
-              + r.transport_single_total.total_mpt.toFixed(4) + ' mPt</div></div>';
+        html += '<div style="padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">'
+              + '<strong>Total Single Score' + tonLabel + ':</strong> '
+              + r.transport_single_total.total_mpt.toFixed(4) + ' mPt</div>';
     }
 
-    // ── Dropdown: select impact category → bar chart ────────
+    // Category dropdown + bar chart
     if (r.transport_impacts && r.transport_impacts.length) {
         const categories = r.transport_impacts.filter(row => row.category).map(row => row.category);
         const defaultIdx = categories.indexOf('Climate change');
         const selIdx = defaultIdx >= 0 ? defaultIdx : 0;
 
-        html += '<div class="card shadow-sm mb-3"><div class="card-body">';
-        html += '<label class="form-label fw-semibold">Selecteer impactcategorie</label>';
-        html += '<select class="form-select mb-3" id="gppCategorySelect">';
+        html += '<div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">';
+        html += '<label class="field-label">Select Impact Category</label>';
+        html += '<select class="form-input" id="gppCategorySelect" style="margin-bottom:12px;">';
         categories.forEach((cat, i) => {
             html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + cat + '</option>';
         });
         html += '</select>';
         html += '<div style="height:350px;"><canvas id="gppSelectedChart"></canvas></div>';
-        html += '</div></div>';
+        html += '</div>';
 
-        // ── Overview: all categories horizontal bar chart ────
-        const tonTitle = r.transport_bruto_ton != null ? ' voor ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
-        html += '<div class="card shadow-sm mb-3"><div class="card-body">';
-        html += '<h6 class="fw-bold">Alle impactcategorieën' + tonTitle + '</h6>';
+        // Overview: all categories horizontal bar chart
+        const tonTitle = r.transport_bruto_ton != null ? ' for ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
+        html += '<div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:16px;">';
+        html += '<div class="section-label">All Impact Categories' + tonTitle + '</div>';
         html += '<div style="height:' + Math.max(400, categories.length * 30) + 'px;"><canvas id="gppOverviewChart"></canvas></div>';
-        html += '</div></div>';
+        html += '</div>';
     }
 
-    // ── Data table: impact categories (collapsible) ─────────
+    // Data table: impact categories (collapsible)
     if (r.transport_impacts && r.transport_impacts.length) {
-        const tonLabel = r.transport_bruto_ton != null ? ' voor ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
-        html += '<div class="accordion mb-3" id="gppTablesAcc">';
-        html += '<div class="accordion-item"><h2 class="accordion-header">'
-              + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppImpactTable">'
-              + 'Tabel: alle impactcategorieën</button></h2>';
-        html += '<div id="gppImpactTable" class="accordion-collapse collapse" data-bs-parent="#gppTablesAcc">';
-        html += '<div class="accordion-body"><div class="table-responsive"><table class="table table-sm table-striped">';
-        html += '<thead><tr><th>Impactcategorie</th><th>Impact totaal' + tonLabel + '</th></tr></thead><tbody>';
+        const tonLabel = r.transport_bruto_ton != null ? ' for ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
+        html += '<details style="margin-bottom:12px;"><summary style="cursor:pointer;font-weight:500;color:var(--text-secondary);padding:8px 0;">Table: All Impact Categories</summary>';
+        html += '<div style="overflow-x:auto;margin-top:8px;"><table class="table table-sm table-striped">';
+        html += '<thead><tr><th>Impact Category</th><th>Total Impact' + tonLabel + '</th></tr></thead><tbody>';
         r.transport_impacts.forEach(row => {
             if (row.category) {
                 html += '<tr><td>' + row.category + '</td>';
                 html += '<td>' + (row.total != null ? row.total.toExponential(4) : '–') + '</td></tr>';
             }
         });
-        html += '</tbody></table></div></div></div>';
+        html += '</tbody></table></div></details>';
 
-        // ── Data table: single scores (collapsible) ─────────
+        // Data table: single scores
         if (r.transport_single_scores && r.transport_single_scores.length) {
-            html += '<div class="accordion-item"><h2 class="accordion-header">'
-                  + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppSingleTable">'
-                  + 'Tabel: single scores per categorie</button></h2>';
-            html += '<div id="gppSingleTable" class="accordion-collapse collapse" data-bs-parent="#gppTablesAcc">';
-            html += '<div class="accordion-body"><div class="table-responsive"><table class="table table-sm table-striped">';
-            html += '<thead><tr><th>Impactcategorie</th><th>mPt totaal</th></tr></thead><tbody>';
+            html += '<details style="margin-bottom:12px;"><summary style="cursor:pointer;font-weight:500;color:var(--text-secondary);padding:8px 0;">Table: Single Scores per Category</summary>';
+            html += '<div style="overflow-x:auto;margin-top:8px;"><table class="table table-sm table-striped">';
+            html += '<thead><tr><th>Impact Category</th><th>mPt Total</th></tr></thead><tbody>';
             r.transport_single_scores.forEach(row => {
                 if (row.category) {
                     html += '<tr><td>' + row.category + '</td>';
@@ -211,49 +200,43 @@ function renderGppResults(r) {
                 }
             });
             if (r.transport_single_total && r.transport_single_total.total_mpt != null) {
-                html += '<tr class="table-info fw-bold"><td>Totaal Single Score</td>';
+                html += '<tr style="font-weight:bold;background:var(--bg);"><td>Total Single Score</td>';
                 html += '<td>' + r.transport_single_total.total_mpt.toFixed(4) + '</td></tr>';
             }
-            html += '</tbody></table></div></div></div>';
+            html += '</tbody></table></div></details>';
         }
-        html += '</div>';
     }
 
-    // ── Dashboard: mixture info (collapsible) ───────────────
+    // Dashboard: mixture info
     if (r.dashboard) {
         const d = r.dashboard;
         const fields = [
-            ['mixture_id', 'Mengsel ID'], ['mixture_sb250', 'SB250-type'],
-            ['mixture_en', 'EN-type'], ['plant', 'Asfaltcentrale'],
-            ['temperature', 'Temperatuur'], ['binder_pct', 'Bindmiddel %'],
-            ['binder_repl', 'Bindmiddel vervanging'], ['bulk_density', 'Bulk dichtheid']
+            ['mixture_id', 'Mixture ID'], ['mixture_sb250', 'SB250 Type'],
+            ['mixture_en', 'EN Type'], ['plant', 'Asphalt Plant'],
+            ['temperature', 'Temperature'], ['binder_pct', 'Binder %'],
+            ['binder_repl', 'Binder Replacement'], ['bulk_density', 'Bulk Density']
         ];
         const hasAny = fields.some(([k]) => d[k] != null);
         if (hasAny) {
-            html += '<div class="accordion mb-3" id="gppDashAcc">';
-            html += '<div class="accordion-item"><h2 class="accordion-header">'
-                  + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppDashboard">'
-                  + 'Mengsel-informatie</button></h2>';
-            html += '<div id="gppDashboard" class="accordion-collapse collapse" data-bs-parent="#gppDashAcc">';
-            html += '<div class="accordion-body"><div class="row g-2">';
+            html += '<details style="margin-bottom:12px;"><summary style="cursor:pointer;font-weight:500;color:var(--text-secondary);padding:8px 0;">Mixture Information</summary>';
+            html += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">';
             fields.forEach(([k, label]) => {
                 if (d[k] != null) {
-                    html += '<div class="col-md-4"><strong>' + label + ':</strong> ' + d[k] + '</div>';
+                    html += '<div style="flex:0 0 calc(33.33% - 8px);padding:8px;background:var(--bg);border-radius:var(--radius-sm);"><strong style="font-size:0.8rem;">' + label + ':</strong> ' + d[k] + '</div>';
                 }
             });
-            html += '</div></div></div></div></div>';
+            html += '</div></details>';
         }
     }
 
     container.innerHTML = html;
 
-    // ── Render Chart.js charts after DOM update ─────────────
+    // Render Chart.js charts after DOM update
     if (r.transport_impacts && r.transport_impacts.length) {
         const impacts = r.transport_impacts.filter(row => row.category);
         const categories = impacts.map(row => row.category);
         const totals = impacts.map(row => row.total || 0);
 
-        // Selected category chart
         let selectedChart = null;
         function renderSelectedChart(idx) {
             const row = impacts[idx];
@@ -266,10 +249,10 @@ function renderGppResults(r) {
             selectedChart = new Chart(ctx, {
                 type: 'bar',
                 data: {
-                    labels: ['Totaal' + tonBar],
+                    labels: ['Total' + tonBar],
                     datasets: [{
                         data: [total],
-                        backgroundColor: '#10b981',
+                        backgroundColor: '#2f855a',
                         barPercentage: 0.4,
                     }]
                 },
@@ -286,7 +269,7 @@ function renderGppResults(r) {
                         }
                     },
                     scales: {
-                        y: { title: { display: true, text: 'Impact waarde' } }
+                        y: { title: { display: true, text: 'Impact Value' } }
                     }
                 }
             });
@@ -301,7 +284,7 @@ function renderGppResults(r) {
 
         // Overview horizontal bar chart
         const selVal = document.getElementById('gppCategorySelect')?.value || 0;
-        const bgColors = categories.map((_, i) => i === parseInt(selVal) ? '#f59e0b' : '#10b981');
+        const bgColors = categories.map((_, i) => i === parseInt(selVal) ? '#c05621' : '#2f855a');
         const overviewCtx = document.getElementById('gppOverviewChart');
         if (overviewCtx) {
             const overviewChart = new Chart(overviewCtx, {
@@ -327,15 +310,14 @@ function renderGppResults(r) {
                         }
                     },
                     scales: {
-                        x: { title: { display: true, text: 'Impact waarde (eenheden verschillen per categorie)' } }
+                        x: { title: { display: true, text: 'Impact Value (units vary per category)' } }
                     }
                 }
             });
 
-            // Update highlight color on category change
             document.getElementById('gppCategorySelect')?.addEventListener('change', function() {
                 const newIdx = parseInt(this.value);
-                overviewChart.data.datasets[0].backgroundColor = categories.map((_, i) => i === newIdx ? '#f59e0b' : '#10b981');
+                overviewChart.data.datasets[0].backgroundColor = categories.map((_, i) => i === newIdx ? '#c05621' : '#2f855a');
                 overviewChart.update();
             });
         }

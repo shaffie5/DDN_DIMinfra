@@ -1,150 +1,119 @@
 {% extends "base.html" %}
-{% block title %}Bon Vrijgegeven{% endblock %}
+{% block title %}Note Released{% endblock %}
 
 {% block content %}
-<div class="text-center mb-4">
-    <div class="fs-1 mb-2">🎉</div>
-    <h2 class="fw-bold text-success">Leveringsbon vrijgegeven!</h2>
-    <p class="text-muted">Vertrektijd geregistreerd: {{ payload.departure_time }}</p>
-</div>
+<div class="wizard-panel">
 
-<!-- Summary -->
-<div class="card shadow-sm mb-4 border-success">
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-4"><strong>DDN:</strong> {{ delivery_note_no }}</div>
-            <div class="col-md-4"><strong>Product:</strong> {{ payload.product_mixture_type or '—' }}</div>
-            <div class="col-md-4"><strong>Afstand:</strong> {{ "%.1f"|format(payload.distance_km) }} km</div>
+    <!-- Success Header -->
+    <div class="panel-header">
+        <h2 class="panel-title">Delivery Note Released</h2>
+        <p class="section-help">Departure time recorded: {{ payload.departure_time }}</p>
+    </div>
+
+    <!-- Summary -->
+    <div class="panel-section">
+        <div class="summary-card">
+            <div class="summary-section">
+                <div class="summary-row"><span>DDN</span><span>{{ delivery_note_no }}</span></div>
+                <div class="summary-row"><span>Product</span><span>{{ payload.product_mixture_type or '—' }}</span></div>
+                <div class="summary-row"><span>Distance</span><span>{{ "%.1f"|format(payload.distance_km) }} km</span></div>
+            </div>
         </div>
     </div>
-</div>
 
-<!-- Signing Links -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">🔗 Ondertekeningslinks</h5>
-        <small class="text-muted">Deel deze links met elke partij om handtekeningen te verzamelen</small>
-    </div>
-    <div class="card-body">
+    <!-- Signing Links -->
+    <div class="panel-section">
+        <div class="section-label">Signing Links</div>
+        <p class="section-help">Share these links with each party to collect signatures</p>
         {% for role, label in role_labels.items() %}
-        <div class="mb-3">
-            <label class="form-label fw-semibold">{{ label }}</label>
-            <div class="input-group">
-                <input type="text" class="form-control" readonly
-                       value="{{ url_for('sign_page', note=note_id, role=role, _external=True) }}"
-                       id="link_{{ role }}">
-                <button class="btn btn-outline-secondary" type="button"
-                        onclick="copyLink('link_{{ role }}')">
-                    <i class="fas fa-copy"></i>
-                </button>
+        <div class="field-row">
+            <div class="field-group" style="flex:1;">
+                <label class="field-label">{{ label }}</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" class="form-input" readonly
+                           value="{{ url_for('sign_page', note=note_id, role=role, _external=True) }}"
+                           id="link_{{ role }}" style="flex:1;">
+                    <button type="button" class="btn-ghost" onclick="copyLink('link_{{ role }}')">Copy</button>
+                </div>
             </div>
         </div>
         {% endfor %}
     </div>
-</div>
 
-<!-- Site Supervisor Info -->
-<div class="alert alert-info">
-    <strong>📱 Werftoezichter:</strong> Open de app, selecteer "Werftoezichter" modus,
-    en voer Leveringsbonnummer in: <strong>{{ delivery_note_no }}</strong>
-</div>
-
-{% if not email_enabled %}
-<div class="alert alert-secondary">
-    <i class="fas fa-info-circle me-1"></i>
-    E-mail niet geconfigureerd — deel de links hierboven handmatig (prototype modus)
-</div>
-{% endif %}
-
-<!-- GPP Tool Integration -->
-<div class="card shadow-sm mb-4">
-    <div class="card-header bg-white">
-        <h5 class="mb-0">📊 Groot Project Planning (GPP) Tool</h5>
-    </div>
-    <div class="card-body">
-        <div class="p-3 rounded-3 mb-3" style="background:#f0fdf4;border:1px solid #bbf7d0;">
-            <div class="d-flex align-items-start gap-3">
-                <div style="font-size:2.5rem;">📊</div>
-                <div>
-                    <div class="fw-bold" style="color:#1e293b;">Groot Project Planning (GPP) Integration</div>
-                    <div class="small" style="color:#475569;line-height:1.5;">
-                        Once the delivery note is signed by all parties, the data is
-                        automatically pushed into the GPP Excel tool for project-level
-                        tracking, quantity reconciliation and progress reporting.
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-md-4">
-                <div class="card text-center p-3 h-100">
-                    <div style="font-size:1.8rem;">📁</div>
-                    <div class="fw-bold small" style="color:#1e293b;">Excel Export</div>
-                    <div class="text-muted" style="font-size:0.78rem;">Leveringsgegevens vloeien automatisch in het GPP-werkblad</div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card text-center p-3 h-100">
-                    <div style="font-size:1.8rem;">📈</div>
-                    <div class="fw-bold small" style="color:#1e293b;">Hoeveelheidsopvolging</div>
-                    <div class="text-muted" style="font-size:0.78rem;">Geleverde versus geplande tonnen worden per werkorder afgestemd</div>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <div class="card text-center p-3 h-100">
-                    <div style="font-size:1.8rem;">🗓️</div>
-                    <div class="fw-bold small" style="color:#1e293b;">Projectplanning</div>
-                    <div class="text-muted" style="font-size:0.78rem;">Leveringsmijlpalen synchroniseren met het totale projectschema</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion" id="gppSettingsAccordion">
-            <div class="accordion-item">
-                <h2 class="accordion-header">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppSettings">
-                        🔌 GPP-verbindingsinstellingen (binnenkort beschikbaar)
-                    </button>
-                </h2>
-                <div id="gppSettings" class="accordion-collapse collapse" data-bs-parent="#gppSettingsAccordion">
-                    <div class="accordion-body">
-                        <div class="mb-3">
-                            <label class="form-label">GPP Excel-bestandspad</label>
-                            <input type="text" class="form-control" disabled
-                                   placeholder="bijv. C:/Projecten/GPP_werkorder_2026.xlsx">
-                            <div class="form-text">Pad naar het GPP Excel-werkboek</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Werkorder / Projectcode</label>
-                            <input type="text" class="form-control" disabled
-                                   placeholder="bijv. WO-2026-0145">
-                            <div class="form-text">GPP-werkorderreferentie om leveringen aan te koppelen</div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Doelblad</label>
-                            <select class="form-select" disabled>
-                                <option>Leveringen</option>
-                                <option>Hoeveelheden</option>
-                                <option>Planning</option>
-                            </select>
-                            <div class="form-text">Welk blad in het GPP-werkboek moet worden ingevuld</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+    <!-- Site Supervisor Info -->
+    <div class="panel-section">
+        <div class="status-info" style="padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);">
+            <strong>Site Supervisor:</strong> Open the app, select "Site Supervisor" mode,
+            and enter Delivery Note Number: <strong>{{ delivery_note_no }}</strong>
         </div>
     </div>
-</div>
 
-<!-- Actions -->
-<div class="d-flex gap-3 justify-content-center mt-4">
-    <a href="{{ url_for('create_note_page') }}" class="btn btn-primary">
-        <i class="fas fa-plus me-1"></i>Nog een bon aanmaken
-    </a>
-    <a href="{{ url_for('home') }}" class="btn btn-outline-secondary">
-        <i class="fas fa-home me-1"></i>Terug naar Home
-    </a>
+    {% if not email_enabled %}
+    <div class="panel-section">
+        <div class="status-warning" style="padding:12px 16px;border-radius:var(--radius);">
+            Email not configured — share the links above manually (prototype mode)
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- GPP Tool Integration -->
+    <div class="panel-section">
+        <div class="section-label">GPP Tool Integration</div>
+        <p class="section-help">
+            Once the delivery note is signed by all parties, the data is
+            automatically pushed into the GPP Excel tool for project-level
+            tracking, quantity reconciliation and progress reporting.
+        </p>
+
+        <div class="field-row" style="gap:12px;">
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Excel Export</div>
+                <div class="section-help">Delivery data flows automatically into the GPP workbook</div>
+            </div>
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Quantity Tracking</div>
+                <div class="section-help">Delivered vs planned tonnes reconciled per work order</div>
+            </div>
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Project Planning</div>
+                <div class="section-help">Delivery milestones sync with overall project schedule</div>
+            </div>
+        </div>
+
+        <details style="margin-top:16px;">
+            <summary style="cursor:pointer;font-weight:500;color:var(--text-secondary);padding:8px 0;">
+                GPP Connection Settings (coming soon)
+            </summary>
+            <div style="padding:16px 0;">
+                <div class="field-group" style="margin-bottom:12px;">
+                    <label class="field-label">GPP Excel File Path</label>
+                    <input type="text" class="form-input" disabled placeholder="e.g. C:/Projects/GPP_workorder_2026.xlsx">
+                    <span class="field-help">Path to the GPP Excel workbook</span>
+                </div>
+                <div class="field-group" style="margin-bottom:12px;">
+                    <label class="field-label">Work Order / Project Code</label>
+                    <input type="text" class="form-input" disabled placeholder="e.g. WO-2026-0145">
+                    <span class="field-help">GPP work order reference to link deliveries</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Target Sheet</label>
+                    <select class="form-input" disabled>
+                        <option>Deliveries</option>
+                        <option>Quantities</option>
+                        <option>Planning</option>
+                    </select>
+                    <span class="field-help">Which sheet in the GPP workbook to populate</span>
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <!-- Actions -->
+    <div class="panel-section" style="display:flex;gap:12px;justify-content:center;">
+        <a href="{{ url_for('create_note_page') }}" class="btn-primary">Create Another Note</a>
+        <a href="{{ url_for('home') }}" class="btn-ghost">Back to Home</a>
+    </div>
+
 </div>
 {% endblock %}
 
@@ -154,7 +123,7 @@ function copyLink(id) {
     const el = document.getElementById(id);
     el.select();
     navigator.clipboard.writeText(el.value);
-    showToast('Link gekopieerd!', 'success');
+    showToast('Link copied!', 'success');
 }
 </script>
 {% endblock %}

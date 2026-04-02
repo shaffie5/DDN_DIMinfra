@@ -43,6 +43,7 @@ function initCreateNoteMap() {
         maxZoom: 19,
     }).addTo(map);
 
+    // Click handler
     map.on('click', function(e) {
         var mode = document.querySelector('input[name="pinMode"]:checked');
         var type = mode ? mode.value : 'origin';
@@ -60,10 +61,10 @@ function applyLocation(type, lat, lon, label) {
         if (originMarker) map.removeLayer(originMarker);
         originMarker = L.marker([lat, lon], {
             icon: L.divIcon({
-                html: '<i class="fas fa-industry" style="color:#2d3748;font-size:24px;"></i>',
+                html: '<i class="fas fa-industry" style="color:#2563eb;font-size:24px;"></i>',
                 iconSize: [24, 24], className: ''
             }),
-        }).addTo(map).bindTooltip('Origin');
+        }).addTo(map).bindTooltip('📍 Herkomst');
 
         updateOriginCard(label, lat, lon);
     } else {
@@ -74,32 +75,34 @@ function applyLocation(type, lat, lon, label) {
         if (destMarker) map.removeLayer(destMarker);
         destMarker = L.marker([lat, lon], {
             icon: L.divIcon({
-                html: '<i class="fas fa-flag-checkered" style="color:#c53030;font-size:24px;"></i>',
+                html: '<i class="fas fa-flag-checkered" style="color:#dc2626;font-size:24px;"></i>',
                 iconSize: [24, 24], className: ''
             }),
-        }).addTo(map).bindTooltip('Destination');
+        }).addTo(map).bindTooltip('🏁 Bestemming');
 
         updateDestCard(label, lat, lon);
+        // Update readonly display
         var display = document.getElementById('siteAddressDisplay');
         if (display) display.value = label;
     }
 
+    // Fit map and calculate route
     if (originMarker && destMarker) {
         var group = new L.featureGroup([originMarker, destMarker]);
         map.fitBounds(group.getBounds().pad(0.2));
         fetchRoute();
     }
 
-    showToast(type === 'origin' ? 'Origin updated' : 'Destination updated', 'success');
+    showToast(type === 'origin' ? '📍 Herkomst bijgewerkt' : '🏁 Bestemming bijgewerkt', 'success');
 }
 
 function updateOriginCard(label, lat, lon) {
     var card = document.getElementById('originCard');
     if (card) {
         card.innerHTML =
-            '<div style="font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-secondary);">Origin — Plant</div>' +
-            '<div style="font-size:0.9rem;">' + (label || 'Via map') + '</div>' +
-            '<div style="font-size:0.72rem;color:var(--text-muted);">' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '</div>';
+            '<div class="fw-bold small text-uppercase text-muted">Herkomst — Centrale</div>' +
+            '<div class="small">' + (label || 'Via kaart') + '</div>' +
+            '<div class="text-muted" style="font-size:0.72rem;">' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '</div>';
     }
 }
 
@@ -107,9 +110,9 @@ function updateDestCard(label, lat, lon) {
     var card = document.getElementById('destCard');
     if (card) {
         card.innerHTML =
-            '<div style="font-weight:600;font-size:0.75rem;text-transform:uppercase;color:var(--text-secondary);">Destination — Site</div>' +
-            '<div style="font-size:0.9rem;">' + (label || 'Via map') + '</div>' +
-            '<div style="font-size:0.72rem;color:var(--text-muted);">' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '</div>';
+            '<div class="fw-bold small text-uppercase text-muted">Bestemming — Werf</div>' +
+            '<div class="small">' + (label || 'Via kaart') + '</div>' +
+            '<div class="text-muted" style="font-size:0.72rem;">' + lat.toFixed(4) + ', ' + lon.toFixed(4) + '</div>';
     }
 }
 
@@ -145,20 +148,22 @@ function fetchRoute() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ plant_lat: pLat, plant_lon: pLon, site_lat: sLat, site_lon: sLon })
     }).then(function(r) { return r.json(); }).then(function(data) {
+        // Draw route
         if (routeLine) map.removeLayer(routeLine);
         if (data.route_coords && data.route_coords.length >= 2) {
-            routeLine = L.polyline(data.route_coords, { weight: 5, color: '#2d3748', opacity: 0.85 }).addTo(map);
+            routeLine = L.polyline(data.route_coords, { weight: 5, color: '#2563eb', opacity: 0.85 }).addTo(map);
             map.fitBounds(routeLine.getBounds().pad(0.1));
         }
 
+        // Update distance info
         var distText = document.getElementById('distanceText');
         var sumDist = document.getElementById('sumDistance');
         if (data.source === 'osrm') {
-            var msg = 'Road distance: ' + data.distance_km + ' km (' + data.duration_min + ' min)';
+            var msg = '🛣️ Rijafstand: ' + data.distance_km + ' km (≈ ' + data.duration_min + ' min)';
             if (distText) distText.textContent = msg;
             if (sumDist) sumDist.textContent = data.distance_km + ' km';
         } else {
-            var msg2 = 'Straight line: ' + data.distance_km + ' km';
+            var msg2 = '📏 Hemelsbreed: ' + data.distance_km + ' km';
             if (distText) distText.textContent = msg2;
             if (sumDist) sumDist.textContent = data.distance_km + ' km';
         }
@@ -178,7 +183,7 @@ function searchLocation(type) {
         body: JSON.stringify({ query: query })
     }).then(function(r) { return r.json(); }).then(function(data) {
         if (!data.length) {
-            showToast('No results found.', 'warning');
+            showToast('Geen resultaten gevonden.', 'warning');
             return;
         }
         sugEl.innerHTML = '';
@@ -191,27 +196,28 @@ function searchLocation(type) {
         });
         sugEl.style.display = 'block';
 
+        // Auto-select first
         var first = data[0];
         applyLocation(type, first.lat, first.lon, first.label);
     }).catch(function() {
-        showToast('Search error.', 'error');
+        showToast('Zoekfout.', 'error');
     });
 }
 
 // ─── GPS ─────────────────────────────────────────────────
 function useGPS(type) {
     if (!navigator.geolocation) {
-        showToast('GPS not available in your browser.', 'warning');
+        showToast('GPS niet beschikbaar in uw browser.', 'warning');
         return;
     }
     navigator.geolocation.getCurrentPosition(
         function(pos) {
             applyLocation(type, pos.coords.latitude, pos.coords.longitude, '');
             reverseGeocode(pos.coords.latitude, pos.coords.longitude, type);
-            showToast('Location updated via GPS', 'success');
+            showToast('📍 Locatie bijgewerkt via GPS', 'success');
         },
         function() {
-            showToast('Cannot get location. Please allow permission in your browser.', 'warning');
+            showToast('Kan locatie niet ophalen. Geef toestemming in uw browser.', 'warning');
         }
     );
 }
@@ -236,13 +242,13 @@ function runOcrScan() {
         .then(function(data) {
             spinner.style.display = 'none';
             if (data.error) {
-                showToast('OCR error: ' + data.error, 'error');
+                showToast('OCR fout: ' + data.error, 'error');
                 return;
             }
 
             ocrFields = data.fields || [];
             if (!ocrFields.length) {
-                showToast('No fields recognised from the document.', 'warning');
+                showToast('Geen velden herkend uit het document.', 'warning');
                 return;
             }
 
@@ -251,19 +257,19 @@ function runOcrScan() {
             ocrFields.forEach(function(f, i) {
                 var val = typeof f.value === 'number' ? f.value.toLocaleString() : f.value;
                 list.innerHTML +=
-                    '<div style="display:flex;align-items:center;gap:12px;padding:6px 0;border-bottom:1px solid var(--border);">' +
-                    '<input type="checkbox" class="ocr-check" data-index="' + i + '" checked>' +
-                    '<span style="font-weight:500;font-size:0.85rem;min-width:180px;">' + f.label + '</span>' +
-                    '<span style="font-size:0.85rem;">' + val + '</span>' +
-                    '<span style="font-size:0.75rem;color:var(--text-muted);margin-left:auto;">' + (f.source || '') + '</span>' +
+                    '<div class="d-flex align-items-center gap-3 py-1 border-bottom">' +
+                    '<input type="checkbox" class="form-check-input ocr-check" data-index="' + i + '" checked>' +
+                    '<span class="fw-semibold small" style="min-width:180px;">' + f.label + '</span>' +
+                    '<span class="small">' + val + '</span>' +
+                    '<small class="text-muted ms-auto">' + (f.source || '') + '</small>' +
                     '</div>';
             });
             results.style.display = 'block';
-            showToast(ocrFields.length + ' field(s) recognised!', 'success');
+            showToast(ocrFields.length + ' veld(en) herkend!', 'success');
         })
         .catch(function(e) {
             spinner.style.display = 'none';
-            showToast('OCR error: ' + e.message, 'error');
+            showToast('OCR fout: ' + e.message, 'error');
         });
 }
 
@@ -276,6 +282,7 @@ function applyOcrFields() {
         var f = ocrFields[idx];
         if (!f) return;
 
+        // Map OCR key to form field id
         var key = f.key.replace('k_', '');
         var el = document.getElementById(key) || document.getElementById(f.key);
         if (el) {
@@ -283,7 +290,7 @@ function applyOcrFields() {
             applied++;
         }
     });
-    showToast(applied + ' field(s) applied!', 'success');
+    showToast(applied + ' veld(en) overgenomen!', 'success');
     document.getElementById('ocrResults').style.display = 'none';
 }
 
@@ -301,9 +308,37 @@ function updateNetCalc() {
     var calcEl = document.getElementById('calcNet');
     if (bruto > 0 && tare > 0) {
         var net = (bruto - tare) / 1000.0;
-        calcEl.textContent = 'Calculated net: ' + net.toFixed(2) + ' ton';
+        calcEl.textContent = 'Berekend netto: ' + net.toFixed(2) + ' ton';
     } else {
         calcEl.textContent = '';
+    }
+}
+
+// ─── Summary Update ──────────────────────────────────────
+function updateSummary() {
+    var ddn = document.getElementById('delivery_note_no');
+    var product = document.getElementById('product_mixture_type');
+    var net = document.getElementById('net_total_quantity_ton');
+
+    var sumDdn = document.getElementById('sumDdn');
+    var sumProduct = document.getElementById('sumProduct');
+    var sumNet = document.getElementById('sumNet');
+    var sumRecip = document.getElementById('sumRecipients');
+
+    if (sumDdn) sumDdn.textContent = (ddn && ddn.value.trim()) || '—';
+    if (sumProduct) sumProduct.textContent = (product && product.value.trim()) || '—';
+    if (sumNet) {
+        var nv = parseFloat(net ? net.value : 0) || 0;
+        sumNet.textContent = nv > 0 ? nv.toFixed(2) + ' ton' : '—';
+    }
+
+    if (sumRecip) {
+        var count = 0;
+        ['email_client', 'email_transporter', 'email_copro', 'email_permit_holder'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el && el.value.trim()) count++;
+        });
+        sumRecip.textContent = count;
     }
 }
 
@@ -312,6 +347,7 @@ function loadDemoData() {
     fetch('/api/demo-data')
         .then(function(r) { return r.json(); })
         .then(function(data) {
+            // Map API response to form field IDs
             var mapping = {
                 delivery_note_no: 'delivery_note_no',
                 transport_company: 'transport_company',
@@ -342,11 +378,13 @@ function loadDemoData() {
                 if (el && data[key] != null) el.value = data[key];
             }
 
+            // Set origin query
             var oq = document.getElementById('originQuery');
             if (oq && data.origin_query) oq.value = data.origin_query;
             var dq = document.getElementById('destinationQuery');
             if (dq && data.destination_query) dq.value = data.destination_query;
 
+            // Set locations on map
             if (data.plant_lat && data.plant_lon) {
                 applyLocation('origin', data.plant_lat, data.plant_lon, data.plant_address || '');
             }
@@ -355,10 +393,10 @@ function loadDemoData() {
             }
 
             updateNetCalc();
-            if (typeof updateSummary === 'function') updateSummary();
-            showToast('Sample data loaded!', 'success');
+            updateSummary();
+            showToast('📋 Demogegevens geladen!', 'success');
         })
         .catch(function(e) {
-            showToast('Error loading demo: ' + e.message, 'error');
+            showToast('Fout bij laden demo: ' + e.message, 'error');
         });
 }
