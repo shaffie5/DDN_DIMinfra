@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Bon Vrijgegeven{% endblock %}
+
+{% block content %}
+<div class="text-center mb-4">
+    <div class="fs-1 mb-2">🎉</div>
+    <h2 class="fw-bold text-success">Leveringsbon vrijgegeven!</h2>
+    <p class="text-muted">Vertrektijd geregistreerd: {{ payload.departure_time }}</p>
+</div>
+
+<!-- Summary -->
+<div class="card shadow-sm mb-4 border-success">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4"><strong>DDN:</strong> {{ delivery_note_no }}</div>
+            <div class="col-md-4"><strong>Product:</strong> {{ payload.product_mixture_type or '—' }}</div>
+            <div class="col-md-4"><strong>Afstand:</strong> {{ "%.1f"|format(payload.distance_km) }} km</div>
+        </div>
+    </div>
+</div>
+
+<!-- Signing Links -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">🔗 Ondertekeningslinks</h5>
+        <small class="text-muted">Deel deze links met elke partij om handtekeningen te verzamelen</small>
+    </div>
+    <div class="card-body">
+        {% for role, label in role_labels.items() %}
+        <div class="mb-3">
+            <label class="form-label fw-semibold">{{ label }}</label>
+            <div class="input-group">
+                <input type="text" class="form-control" readonly
+                       value="{{ url_for('sign_page', note=note_id, role=role, _external=True) }}"
+                       id="link_{{ role }}">
+                <button class="btn btn-outline-secondary" type="button"
+                        onclick="copyLink('link_{{ role }}')">
+                    <i class="fas fa-copy"></i>
+                </button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Site Supervisor Info -->
+<div class="alert alert-info">
+    <strong>📱 Werftoezichter:</strong> Open de app, selecteer "Werftoezichter" modus,
+    en voer Leveringsbonnummer in: <strong>{{ delivery_note_no }}</strong>
+</div>
+
+{% if not email_enabled %}
+<div class="alert alert-secondary">
+    <i class="fas fa-info-circle me-1"></i>
+    E-mail niet geconfigureerd — deel de links hierboven handmatig (prototype modus)
+</div>
+{% endif %}
+
+<!-- Actions -->
+<div class="d-flex gap-3 justify-content-center mt-4">
+    <a href="{{ url_for('create_note_page') }}" class="btn btn-primary">
+        <i class="fas fa-plus me-1"></i>Nog een bon aanmaken
+    </a>
+    <a href="{{ url_for('home') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-home me-1"></i>Terug naar Home
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function copyLink(id) {
+    const el = document.getElementById(id);
+    el.select();
+    navigator.clipboard.writeText(el.value);
+    showToast('Link gekopieerd!', 'success');
+}
+</script>
+{% endblock %}

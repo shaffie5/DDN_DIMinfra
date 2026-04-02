@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Levering Ontvangen{% endblock %}
+
+{% block content %}
+<div class="text-center mb-4">
+    <div class="fs-1 mb-2">🎉</div>
+    <h2 class="fw-bold text-success">Aankomst geregistreerd!</h2>
+    <p class="text-muted">Aankomsttijd: <strong>{{ payload.arrival_time }}</strong></p>
+</div>
+
+<!-- Delivery Summary -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">📋 Leveringsgegevens</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-2">
+            <div class="col-md-6"><strong>DDN:</strong> {{ payload.delivery_note_no }}</div>
+            <div class="col-md-6"><strong>Datum:</strong> {{ payload.date }}</div>
+            <div class="col-md-6"><strong>Vertrek:</strong> {{ payload.departure_time }}</div>
+            <div class="col-md-6"><strong>Aankomst:</strong> {{ payload.arrival_time }}</div>
+            <div class="col-md-6"><strong>Transport:</strong> {{ payload.transport_company }}</div>
+            <div class="col-md-6"><strong>Nummerplaat:</strong> {{ payload.license_plate }}</div>
+            <div class="col-md-6"><strong>Product:</strong> {{ payload.product_mixture_type }}</div>
+            <div class="col-md-6"><strong>Afstand:</strong> {{ "%.1f"|format(payload.distance_km) }} km</div>
+            <div class="col-md-6"><strong>Netto:</strong> {{ payload.net_total_quantity_ton }} ton</div>
+            <div class="col-md-6"><strong>Energiebron:</strong> {{ payload.energy_source }}</div>
+        </div>
+    </div>
+</div>
+
+{% if emailed %}
+<div class="alert alert-success">
+    ✅ Excel gegenereerd en verzonden per e-mail.
+    <div class="small mt-1"><b>Verzonden naar:</b> {{ emails|join(', ') }}</div>
+</div>
+{% elif emails and not emailed %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    E-mail niet geconfigureerd; Excel gegenereerd om te downloaden.
+</div>
+{% else %}
+<div class="alert alert-info">
+    <i class="fas fa-info-circle me-1"></i>
+    Geen e-mailadressen opgegeven; Excel gegenereerd om te downloaden.
+</div>
+{% endif %}
+
+<!-- GPP Actions -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">🔌 GPP Integratie</h5>
+    </div>
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-primary" id="pushGppBtn" data-note-id="{{ note.id }}">
+                <i class="fas fa-upload me-1"></i>Verstuur naar GPP
+            </button>
+            <button class="btn btn-primary" id="calcGppBtn" data-note-id="{{ note.id }}">
+                🔬 Bereken Milieu-impact
+            </button>
+        </div>
+        <div id="gppStatus" class="mt-2" style="display:none;"></div>
+        <div id="gppResults" class="mt-3" style="display:none;"></div>
+    </div>
+</div>
+
+<!-- Download -->
+<a href="{{ url_for('download_excel', note_id=note.id) }}" class="btn btn-success btn-lg w-100 mb-3">
+    📥 Download Excel (xlsx)
+</a>
+
+<!-- Reset -->
+<div class="text-center">
+    <a href="{{ url_for('site_supervisor_page') }}" class="btn btn-outline-secondary">
+        Nieuwe levering verwerken
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('pushGppBtn')?.addEventListener('click', async function() {
+    const noteId = this.dataset.noteId;
+    const status = document.getElementById('gppStatus');
+    status.style.display = 'block';
+    status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Versturen naar GPP...';
+
+    try {
+        const resp = await fetch('/api/push-gpp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({note_id: noteId})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            status.innerHTML = '<div class="alert alert-success">' + data.message + '</div>';
+        } else {
+            status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
+        }
+    } catch(e) {
+        status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+    }
+});
+
+document.getElementById('calcGppBtn')?.addEventListener('click', async function() {
+    const noteId = this.dataset.noteId;
+    const status = document.getElementById('gppStatus');
+    const results = document.getElementById('gppResults');
+    status.style.display = 'block';
+    status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Excel rekenmodel wordt uitgevoerd...';
+
+    try {
+        const resp = await fetch('/api/calculate-gpp', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({note_id: noteId})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            status.innerHTML = '<div class="alert alert-success">Berekening voltooid!</div>';
+            renderGppResults(data.results);
+        } else {
+            status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
+        }
+    } catch(e) {
+        status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+    }
+});
+
+function renderGppResults(r) {
+    const container = document.getElementById('gppResults');
+    container.style.display = 'block';
+    let html = '<h5 class="fw-bold">Asphalt Transport Results (DDN)</h5>';
+
+    // Metrics
+    html += '<div class="row g-3 mb-3">';
+    if (r.transport_bruto_ton != null) {
+        html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Bruto gewicht</div><div class="fs-5 fw-bold">' + r.transport_bruto_ton.toFixed(2) + ' ton</div></div></div>';
+    }
+    if (r.transport_distance_km != null) {
+        html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Transportafstand</div><div class="fs-5 fw-bold">' + r.transport_distance_km.toFixed(1) + ' km</div></div></div>';
+    }
+    html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Energiebron</div><div class="fs-5 fw-bold">' + (r.energy_source || '–') + '</div></div></div>';
+    html += '</div>';
+
+    // Single score
+    if (r.transport_single_total && r.transport_single_total.total_mpt != null) {
+        html += '<div class="alert alert-info"><strong>Total Single Score:</strong> ' + r.transport_single_total.total_mpt.toFixed(4) + ' mPt</div>';
+    }
+
+    // Impact table
+    if (r.transport_impacts && r.transport_impacts.length) {
+        html += '<div class="table-responsive"><table class="table table-sm table-striped">';
+        html += '<thead><tr><th>Impactcategorie</th><th>Per ton</th><th>Totaal</th></tr></thead><tbody>';
+        r.transport_impacts.forEach(row => {
+            html += '<tr><td>' + row.category + '</td>';
+            html += '<td>' + (row.per_ton != null ? row.per_ton.toExponential(4) : '–') + '</td>';
+            html += '<td>' + (row.total != null ? row.total.toExponential(4) : '–') + '</td></tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+
+    container.innerHTML = html;
+}
+</script>
+{% endblock %}

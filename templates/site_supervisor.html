@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Werftoezichter{% endblock %}
+
+{% block content %}
+<div class="mb-4">
+    <h3 class="fw-bold">🏗️ Levering Ontvangen</h3>
+    <p class="text-muted">Registreer aankomsttijd vrachtwagen voor een vrijgegeven leveringsbon</p>
+</div>
+
+<div class="alert alert-success border-success">
+    Voer het leveringsbonnummer in of selecteer het uit de vrijgegeven bonnen.
+    Zodra de vrachtwagen aankomt, druk op de knop om de aankomsttijd te registreren.
+</div>
+
+<form method="POST" action="{{ url_for('receive_delivery') }}">
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            {% if available_notes %}
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Selecteer een vrijgegeven leveringsbon</label>
+                <select class="form-select" name="delivery_note_no" id="noteSelect">
+                    {% for dn in available_notes %}
+                    <option value="{{ dn }}">{{ dn }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                Nog geen vrijgegeven leveringsbonnen gevonden.
+                Wachten tot de centrale een bon vrijgeeft.
+            </div>
+            {% endif %}
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Of voer leveringsbonnummer handmatig in</label>
+                <input type="text" class="form-control" id="manualDn"
+                       placeholder="bijv. DDN-2026-00142">
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                🚛 Vrachtwagen Ontvangen — Aankomsttijd Registreren
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('manualDn')?.addEventListener('input', function() {
+    const sel = document.getElementById('noteSelect');
+    if (this.value.trim() && sel) {
+        // Override the select with manual value by adding a hidden input
+        let hidden = document.getElementById('manualDnHidden');
+        if (!hidden) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'delivery_note_no';
+            hidden.id = 'manualDnHidden';
+            this.parentNode.appendChild(hidden);
+        }
+        hidden.value = this.value.trim();
+        if (sel) sel.removeAttribute('name');
+    } else {
+        const hidden = document.getElementById('manualDnHidden');
+        if (hidden) hidden.remove();
+        if (sel) sel.name = 'delivery_note_no';
+    }
+});
+</script>
+{% endblock %}

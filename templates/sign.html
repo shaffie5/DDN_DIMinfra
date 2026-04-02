@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Ondertekenen als {{ role_label }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    #signatureCanvas {
+        border: 2px solid #cbd5e1;
+        border-radius: 12px;
+        cursor: crosshair;
+        touch-action: none;
+        background: #fff;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Status Badge -->
+{% if is_signed %}
+<div class="badge bg-success fs-6 mb-3 px-3 py-2">
+    ✅ Ondertekend als {{ role_label }}
+</div>
+{% else %}
+<div class="badge bg-warning text-dark fs-6 mb-3 px-3 py-2">
+    ✍️ Wacht op handtekening — {{ role_label }}
+</div>
+{% endif %}
+
+<h3 class="fw-bold mb-3">✍️ Ondertekenen als {{ role_label }}</h3>
+
+<!-- Signing Progress -->
+{% set signed_count = sigs|length %}
+{% set total = role_labels|length %}
+{% set pct = (signed_count / total * 100)|int %}
+<div class="mb-4">
+    <div class="d-flex justify-content-between small mb-1">
+        <span>Handtekeningen: {{ signed_count }} / {{ total }}</span>
+        <span>{{ pct }}%</span>
+    </div>
+    <div class="progress" style="height:10px;">
+        <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
+    </div>
+</div>
+
+<!-- Delivery Summary -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white" data-bs-toggle="collapse" data-bs-target="#summaryCollapse" role="button">
+        <strong>Samenvatting leveringsbon</strong>
+        <i class="fas fa-chevron-down float-end"></i>
+    </div>
+    <div class="collapse" id="summaryCollapse">
+        <div class="card-body">
+            <div class="row g-2">
+                <div class="col-md-6"><strong>Datum:</strong> {{ payload.get('date', '—') }}</div>
+                <div class="col-md-6"><strong>DDN:</strong> {{ payload.get('delivery_note_no', '—') }}</div>
+                <div class="col-md-6"><strong>Centrale:</strong> {{ payload.get('plant_address', '—') }}</div>
+                <div class="col-md-6"><strong>Werf:</strong> {{ payload.get('site_address', '—') }}</div>
+                <div class="col-md-6"><strong>Transport:</strong> {{ payload.get('transport_company', '—') }}</div>
+                <div class="col-md-6"><strong>Nummerplaat:</strong> {{ payload.get('license_plate', '—') }}</div>
+                <div class="col-md-6"><strong>Vertrek:</strong> {{ payload.get('departure_time', '—') }}</div>
+                <div class="col-md-6"><strong>Aankomst:</strong> {{ payload.get('arrival_time', '—') }}</div>
+                <div class="col-md-6"><strong>Product:</strong> {{ payload.get('product_mixture_type', '—') }}</div>
+                <div class="col-md-6"><strong>Netto hvh:</strong> {{ payload.get('net_total_quantity_ton', '—') }} ton</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Signature Area -->
+{% if not is_signed %}
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">🖊️ Teken uw handtekening</h5>
+        <small class="text-muted">Gebruik uw muis of vinger om hieronder te tekenen</small>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label fw-semibold">Uw volledige naam</label>
+            <input type="text" class="form-control" id="signerName" placeholder="bijv. Jan De Smet">
+        </div>
+
+        <canvas id="signatureCanvas" width="700" height="180"></canvas>
+
+        <div class="mt-2 d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="clearCanvasBtn">
+                <i class="fas fa-eraser me-1"></i>Wissen
+            </button>
+        </div>
+
+        <button type="button" class="btn btn-primary btn-lg w-100 mt-3" id="submitSigBtn">
+            ✅ Handtekening Indienen
+        </button>
+        <div id="sigStatus" class="mt-2" style="display:none;"></div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Signing Status -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">📊 Ondertekeningsstatus</h5>
+    </div>
+    <div class="card-body" id="signingStatus">
+        {% for r, lbl in role_labels.items() %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+            {% if r in sigs %}
+            <span class="text-success">✅</span>
+            <strong>{{ lbl }}</strong> — Ondertekend
+            {% else %}
+            <span class="text-muted">⏳</span>
+            <strong>{{ lbl }}</strong> — In afwachting
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Fully Signed Panel -->
+{% if fully_signed %}
+<div class="text-center p-4 rounded-3 mb-4" style="background:linear-gradient(135deg,#dcfce7,#bbf7d0);">
+    <div class="fs-1">🎉</div>
+    <h4 class="fw-bold text-success">Alle partijen hebben ondertekend!</h4>
+    <p class="text-success">De leveringsbon is compleet. Download het Excel-rapport hieronder.</p>
+</div>
+<a href="{{ url_for('download_excel', note_id=note_id) }}" class="btn btn-success btn-lg w-100">
+    📥 Download Ondertekende Excel (xlsx)
+</a>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const canvas = document.getElementById('signatureCanvas');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    let hasDrawn = false;
+
+    // Resize canvas to container
+    function resizeCanvas() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = Math.min(rect.width - 30, 700);
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        return {
+            x: touch.clientX - rect.left,
+            y: touch.clientY - rect.top
+        };
+    }
+
+    canvas.addEventListener('mousedown', e => { drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+    canvas.addEventListener('mousemove', e => { if (!drawing) return; hasDrawn = true; const p = getPos(e); ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#000'; ctx.lineTo(p.x, p.y); ctx.stroke(); });
+    canvas.addEventListener('mouseup', () => drawing = false);
+    canvas.addEventListener('mouseleave', () => drawing = false);
+
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; ctx.beginPath(); const p = getPos(e); ctx.moveTo(p.x, p.y); });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); if (!drawing) return; hasDrawn = true; const p = getPos(e); ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#000'; ctx.lineTo(p.x, p.y); ctx.stroke(); });
+    canvas.addEventListener('touchend', () => drawing = false);
+
+    document.getElementById('clearCanvasBtn').addEventListener('click', function() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        hasDrawn = false;
+    });
+
+    document.getElementById('submitSigBtn').addEventListener('click', async function() {
+        if (!hasDrawn) {
+            showToast('Teken eerst uw handtekening.', 'warning');
+            return;
+        }
+
+        const sigData = canvas.toDataURL('image/png');
+        const signerName = document.getElementById('signerName').value.trim();
+        const status = document.getElementById('sigStatus');
+
+        this.disabled = true;
+        status.style.display = 'block';
+        status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Opslaan...';
+
+        try {
+            const formData = new URLSearchParams();
+            formData.append('note_id', '{{ note_id }}');
+            formData.append('role', '{{ role }}');
+            formData.append('signer_name', signerName);
+            formData.append('signature_data', sigData);
+
+            const resp = await fetch('{{ url_for("sign_submit") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                body: formData.toString()
+            });
+            const data = await resp.json();
+
+            if (data.success) {
+                status.innerHTML = '<div class="alert alert-success">✅ ' + data.message + '</div>';
+                showToast(data.message, 'success');
+                // Reload after brief delay to show updated status
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                status.innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+                this.disabled = false;
+            }
+        } catch(e) {
+            status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+            this.disabled = false;
+        }
+    });
+});
+</script>
+{% endblock %}
