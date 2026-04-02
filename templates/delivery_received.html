@@ -49,15 +49,16 @@
 <!-- GPP Actions -->
 <div class="card shadow-sm mb-4">
     <div class="card-header bg-white">
-        <h5 class="mb-0">🔌 GPP Integratie</h5>
+        <h5 class="mb-0"><i class="fas fa-leaf me-1 text-success"></i> Milieu-impactberekening (GPP Tool)</h5>
+        <small class="text-muted">Bereken de levenscyclus-milieueffecten van deze levering via het GPP-rekenmodel</small>
     </div>
     <div class="card-body">
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2 mb-3">
             <button class="btn btn-outline-primary" id="pushGppBtn" data-note-id="{{ note.id }}">
                 <i class="fas fa-upload me-1"></i>Verstuur naar GPP
             </button>
             <button class="btn btn-primary" id="calcGppBtn" data-note-id="{{ note.id }}">
-                🔬 Bereken Milieu-impact
+                <i class="fas fa-microscope me-1"></i> Bereken Milieu-impact
             </button>
         </div>
         <div id="gppStatus" class="mt-2" style="display:none;"></div>
@@ -131,9 +132,9 @@ document.getElementById('calcGppBtn')?.addEventListener('click', async function(
 function renderGppResults(r) {
     const container = document.getElementById('gppResults');
     container.style.display = 'block';
-    let html = '<h5 class="fw-bold">Asphalt Transport Results (DDN)</h5>';
+    let html = '<h5 class="fw-bold mb-3">Asphalt Transport Results (DDN)</h5>';
 
-    // Metrics
+    // ── Delivery parameter metrics ──────────────────────────
     html += '<div class="row g-3 mb-3">';
     if (r.transport_bruto_ton != null) {
         html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Bruto gewicht</div><div class="fs-5 fw-bold">' + r.transport_bruto_ton.toFixed(2) + ' ton</div></div></div>';
@@ -144,24 +145,201 @@ function renderGppResults(r) {
     html += '<div class="col-md-4"><div class="card text-center p-3"><div class="small text-muted">Energiebron</div><div class="fs-5 fw-bold">' + (r.energy_source || '–') + '</div></div></div>';
     html += '</div>';
 
-    // Single score
+    // ── Total Single Score (headline) ───────────────────────
     if (r.transport_single_total && r.transport_single_total.total_mpt != null) {
-        html += '<div class="alert alert-info"><strong>Total Single Score:</strong> ' + r.transport_single_total.total_mpt.toFixed(4) + ' mPt</div>';
+        const tonLabel = r.transport_bruto_ton != null ? ' (' + r.transport_bruto_ton.toFixed(2) + ' ton)' : '';
+        html += '<div class="alert alert-info d-flex align-items-center gap-2 mb-3">'
+              + '<i class="fas fa-chart-line fa-lg"></i>'
+              + '<div><strong>Total Single Score' + tonLabel + ':</strong> '
+              + r.transport_single_total.total_mpt.toFixed(4) + ' mPt</div></div>';
     }
 
-    // Impact table
+    // ── Dropdown: select impact category → bar chart ────────
     if (r.transport_impacts && r.transport_impacts.length) {
-        html += '<div class="table-responsive"><table class="table table-sm table-striped">';
-        html += '<thead><tr><th>Impactcategorie</th><th>Per ton</th><th>Totaal</th></tr></thead><tbody>';
-        r.transport_impacts.forEach(row => {
-            html += '<tr><td>' + row.category + '</td>';
-            html += '<td>' + (row.per_ton != null ? row.per_ton.toExponential(4) : '–') + '</td>';
-            html += '<td>' + (row.total != null ? row.total.toExponential(4) : '–') + '</td></tr>';
+        const categories = r.transport_impacts.filter(row => row.category).map(row => row.category);
+        const defaultIdx = categories.indexOf('Climate change');
+        const selIdx = defaultIdx >= 0 ? defaultIdx : 0;
+
+        html += '<div class="card shadow-sm mb-3"><div class="card-body">';
+        html += '<label class="form-label fw-semibold">Selecteer impactcategorie</label>';
+        html += '<select class="form-select mb-3" id="gppCategorySelect">';
+        categories.forEach((cat, i) => {
+            html += '<option value="' + i + '"' + (i === selIdx ? ' selected' : '') + '>' + cat + '</option>';
         });
-        html += '</tbody></table></div>';
+        html += '</select>';
+        html += '<div style="height:350px;"><canvas id="gppSelectedChart"></canvas></div>';
+        html += '</div></div>';
+
+        // ── Overview: all categories horizontal bar chart ────
+        const tonTitle = r.transport_bruto_ton != null ? ' voor ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
+        html += '<div class="card shadow-sm mb-3"><div class="card-body">';
+        html += '<h6 class="fw-bold">Alle impactcategorieën' + tonTitle + '</h6>';
+        html += '<div style="height:' + Math.max(400, categories.length * 30) + 'px;"><canvas id="gppOverviewChart"></canvas></div>';
+        html += '</div></div>';
+    }
+
+    // ── Data table: impact categories (collapsible) ─────────
+    if (r.transport_impacts && r.transport_impacts.length) {
+        const tonLabel = r.transport_bruto_ton != null ? ' voor ' + r.transport_bruto_ton.toFixed(2) + ' ton' : '';
+        html += '<div class="accordion mb-3" id="gppTablesAcc">';
+        html += '<div class="accordion-item"><h2 class="accordion-header">'
+              + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppImpactTable">'
+              + 'Tabel: alle impactcategorieën</button></h2>';
+        html += '<div id="gppImpactTable" class="accordion-collapse collapse" data-bs-parent="#gppTablesAcc">';
+        html += '<div class="accordion-body"><div class="table-responsive"><table class="table table-sm table-striped">';
+        html += '<thead><tr><th>Impactcategorie</th><th>Impact totaal' + tonLabel + '</th></tr></thead><tbody>';
+        r.transport_impacts.forEach(row => {
+            if (row.category) {
+                html += '<tr><td>' + row.category + '</td>';
+                html += '<td>' + (row.total != null ? row.total.toExponential(4) : '–') + '</td></tr>';
+            }
+        });
+        html += '</tbody></table></div></div></div>';
+
+        // ── Data table: single scores (collapsible) ─────────
+        if (r.transport_single_scores && r.transport_single_scores.length) {
+            html += '<div class="accordion-item"><h2 class="accordion-header">'
+                  + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppSingleTable">'
+                  + 'Tabel: single scores per categorie</button></h2>';
+            html += '<div id="gppSingleTable" class="accordion-collapse collapse" data-bs-parent="#gppTablesAcc">';
+            html += '<div class="accordion-body"><div class="table-responsive"><table class="table table-sm table-striped">';
+            html += '<thead><tr><th>Impactcategorie</th><th>mPt totaal</th></tr></thead><tbody>';
+            r.transport_single_scores.forEach(row => {
+                if (row.category) {
+                    html += '<tr><td>' + row.category + '</td>';
+                    html += '<td>' + (row.total_mpt != null ? row.total_mpt.toFixed(6) : '–') + '</td></tr>';
+                }
+            });
+            if (r.transport_single_total && r.transport_single_total.total_mpt != null) {
+                html += '<tr class="table-info fw-bold"><td>Totaal Single Score</td>';
+                html += '<td>' + r.transport_single_total.total_mpt.toFixed(4) + '</td></tr>';
+            }
+            html += '</tbody></table></div></div></div>';
+        }
+        html += '</div>';
+    }
+
+    // ── Dashboard: mixture info (collapsible) ───────────────
+    if (r.dashboard) {
+        const d = r.dashboard;
+        const fields = [
+            ['mixture_id', 'Mengsel ID'], ['mixture_sb250', 'SB250-type'],
+            ['mixture_en', 'EN-type'], ['plant', 'Asfaltcentrale'],
+            ['temperature', 'Temperatuur'], ['binder_pct', 'Bindmiddel %'],
+            ['binder_repl', 'Bindmiddel vervanging'], ['bulk_density', 'Bulk dichtheid']
+        ];
+        const hasAny = fields.some(([k]) => d[k] != null);
+        if (hasAny) {
+            html += '<div class="accordion mb-3" id="gppDashAcc">';
+            html += '<div class="accordion-item"><h2 class="accordion-header">'
+                  + '<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gppDashboard">'
+                  + 'Mengsel-informatie</button></h2>';
+            html += '<div id="gppDashboard" class="accordion-collapse collapse" data-bs-parent="#gppDashAcc">';
+            html += '<div class="accordion-body"><div class="row g-2">';
+            fields.forEach(([k, label]) => {
+                if (d[k] != null) {
+                    html += '<div class="col-md-4"><strong>' + label + ':</strong> ' + d[k] + '</div>';
+                }
+            });
+            html += '</div></div></div></div></div>';
+        }
     }
 
     container.innerHTML = html;
+
+    // ── Render Chart.js charts after DOM update ─────────────
+    if (r.transport_impacts && r.transport_impacts.length) {
+        const impacts = r.transport_impacts.filter(row => row.category);
+        const categories = impacts.map(row => row.category);
+        const totals = impacts.map(row => row.total || 0);
+
+        // Selected category chart
+        let selectedChart = null;
+        function renderSelectedChart(idx) {
+            const row = impacts[idx];
+            const total = row.total || 0;
+            const tonBar = r.transport_bruto_ton != null ? ' (' + r.transport_bruto_ton.toFixed(2) + ' ton)' : '';
+
+            if (selectedChart) selectedChart.destroy();
+            const ctx = document.getElementById('gppSelectedChart');
+            if (!ctx) return;
+            selectedChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Totaal' + tonBar],
+                    datasets: [{
+                        data: [total],
+                        backgroundColor: '#10b981',
+                        barPercentage: 0.4,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: row.category, font: { size: 16 } },
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.parsed.y.toExponential(4)
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { title: { display: true, text: 'Impact waarde' } }
+                    }
+                }
+            });
+        }
+
+        const defaultIdx = categories.indexOf('Climate change');
+        renderSelectedChart(defaultIdx >= 0 ? defaultIdx : 0);
+
+        document.getElementById('gppCategorySelect')?.addEventListener('change', function() {
+            renderSelectedChart(parseInt(this.value));
+        });
+
+        // Overview horizontal bar chart
+        const selVal = document.getElementById('gppCategorySelect')?.value || 0;
+        const bgColors = categories.map((_, i) => i === parseInt(selVal) ? '#f59e0b' : '#10b981');
+        const overviewCtx = document.getElementById('gppOverviewChart');
+        if (overviewCtx) {
+            const overviewChart = new Chart(overviewCtx, {
+                type: 'bar',
+                data: {
+                    labels: categories,
+                    datasets: [{
+                        data: totals,
+                        backgroundColor: bgColors,
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        title: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.parsed.x.toExponential(4)
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Impact waarde (eenheden verschillen per categorie)' } }
+                    }
+                }
+            });
+
+            // Update highlight color on category change
+            document.getElementById('gppCategorySelect')?.addEventListener('change', function() {
+                const newIdx = parseInt(this.value);
+                overviewChart.data.datasets[0].backgroundColor = categories.map((_, i) => i === newIdx ? '#f59e0b' : '#10b981');
+                overviewChart.update();
+            });
+        }
+    }
 }
 </script>
 {% endblock %}

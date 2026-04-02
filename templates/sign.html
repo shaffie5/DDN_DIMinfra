@@ -121,6 +121,13 @@
     <h4 class="fw-bold text-success">Alle partijen hebben ondertekend!</h4>
     <p class="text-success">De leveringsbon is compleet. Download het Excel-rapport hieronder.</p>
 </div>
+
+<!-- GPP Push -->
+<button class="btn btn-outline-primary btn-lg w-100 mb-3" id="pushGppSignBtn" data-note-id="{{ note_id }}">
+    <i class="fas fa-upload me-1"></i>Verstuur aankomst naar GPP
+</button>
+<div id="gppSignStatus" class="mb-3" style="display:none;"></div>
+
 <a href="{{ url_for('download_excel', note_id=note_id) }}" class="btn btn-success btn-lg w-100">
     📥 Download Ondertekende Excel (xlsx)
 </a>
@@ -203,6 +210,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 setTimeout(() => location.reload(), 1500);
             } else {
                 status.innerHTML = '<div class="alert alert-danger">' + data.error + '</div>';
+                this.disabled = false;
+            }
+        } catch(e) {
+            status.innerHTML = '<div class="alert alert-danger">Fout: ' + e.message + '</div>';
+            this.disabled = false;
+        }
+    });
+
+    // GPP Push button (fully signed)
+    document.getElementById('pushGppSignBtn')?.addEventListener('click', async function() {
+        const noteId = this.dataset.noteId;
+        const status = document.getElementById('gppSignStatus');
+        this.disabled = true;
+        status.style.display = 'block';
+        status.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Versturen naar GPP...';
+
+        try {
+            const resp = await fetch('/api/push-gpp', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({note_id: noteId})
+            });
+            const data = await resp.json();
+            if (data.success) {
+                status.innerHTML = '<div class="alert alert-success">' + data.message + '</div>';
+            } else {
+                status.innerHTML = '<div class="alert alert-warning">' + (data.error || 'Mislukt') + '</div>';
                 this.disabled = false;
             }
         } catch(e) {
