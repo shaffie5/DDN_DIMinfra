@@ -13,7 +13,7 @@ Workflow
 3. Force Excel to recalculate.
 4. Read computed results from **Results**, **DDN_Results_TP**,
    **Result Dashboard**, and **Aux - Check** sheets.
-5. Return a structured Python dict to the Streamlit frontend.
+5. Return a structured Python dict to the Flask frontend.
 """
 
 from __future__ import annotations
@@ -89,25 +89,21 @@ LIFECYCLE_STAGES: list[str] = [
 class GPPEngine:
     """Drive the GPP Excel tool as a headless calculation backend."""
 
-    def calculate(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def calculate(self, payload: dict[str, Any],
+                  extra_cells: dict[str, Any] | None = None) -> dict[str, Any]:
         """Write DDN inputs, recalculate Excel, read results.
 
         Parameters
         ----------
         payload : dict
             DDN delivery note payload (same dict used throughout app.py).
-
-        Returns
-        -------
-        dict with keys:
-            pef_score        – float  (total PEF single score, mPt/ton)
-            gwp_total        – float  (global warming kgCO₂-eq/ton, cradle-to-gate)
-            check_ok         – bool   (True if all GPP validation checks pass)
-            impact_matrix    – list[dict]  (19 rows × lifecycle stages)
-            single_scores    – list[dict]  (19 rows × lifecycle stages, normalised)
-            transport_impacts – list[dict] (19 rows, per-ton + total)
-            transport_single_scores – list[dict] (16 rows, single score)
-            dashboard        – dict   (general info from Result Dashboard)
+        extra_cells : dict[str, Any] | None
+            Optional flat dict ``{cell_address: value}`` of additional
+            writes to the GPP **Input** sheet — used by the
+            verantwoordingsnota (VN) integration to populate mixture
+            composition, plant info and per-component transport.
+            Cells listed here are written **after** ``INPUT_CELL_MAP``
+            so they take precedence.
         """
         tmpdir = tempfile.mkdtemp(prefix="gpp_calc_")
         work_copy = Path(tmpdir) / GPP_TEMPLATE.name
@@ -126,6 +122,14 @@ class GPPEngine:
             for key, cell_addr in INPUT_CELL_MAP.items():
                 value = payload.get(key)
                 if value is not None:
+                    inp.range(cell_addr).value = value
+
+            # ── Write VN-derived extra cells (mixture composition,
+            #     plant info, per-component transport) ──────────────
+            if extra_cells:
+                for cell_addr, value in extra_cells.items():
+                    if value is None:
+                        continue
                     inp.range(cell_addr).value = value
 
             # ── Force recalculation ─────────────────────────────────

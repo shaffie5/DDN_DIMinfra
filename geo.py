@@ -1,10 +1,49 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import requests
+
+
+_GEOCODE_CACHE: dict[str, "GeoPoint | None"] = {}
+
+
+def geocode(query: str, timeout_s: float = 8.0) -> "GeoPoint | None":
+    """Geocode a free-form address/place via Nominatim. Cached in-process.
+
+    Returns None if the query cannot be resolved.
+    """
+    if not query or not query.strip():
+        return None
+    key = query.strip().lower()
+    if key in _GEOCODE_CACHE:
+        return _GEOCODE_CACHE[key]
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {"q": query, "format": "json", "limit": 1}
+    headers = {"User-Agent": "DDN-DIMinfra/1.0 (geocode)"}
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+        if not data:
+            _GEOCODE_CACHE[key] = None
+            return None
+        item = data[0]
+        gp = GeoPoint(
+            lat=float(item["lat"]),
+            lon=float(item["lon"]),
+            label=item.get("display_name") or query,
+        )
+        _GEOCODE_CACHE[key] = gp
+        # be polite to the public Nominatim service
+        time.sleep(1.0)
+        return gp
+    except Exception:
+        _GEOCODE_CACHE[key] = None
+        return None
 
 
 @dataclass(frozen=True)

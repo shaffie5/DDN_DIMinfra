@@ -1,6 +1,6 @@
 # Digital Delivery Note (Prototype)
 
-Streamlit prototype for an asphalt mixture digital delivery note with 4-party signing (Client, Transporter, COPRO, Permit holder) and Excel output.
+Flask prototype for an asphalt mixture digital delivery note with 4-party signing (Client, Transporter, COPRO, Permit holder) and Excel output.
 
 ## Run
 
@@ -9,7 +9,7 @@ cd c:\Repositories\DDN_NEW
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-streamlit run app.py
+python flask_app.py
 ```
 
 ## Email (optional)
@@ -29,6 +29,6 @@ If not set, the app will show the signing links in-app (prototype mode).
 
 The prototype uses:
 
-- OpenStreetMap rendering via `folium` + `streamlit-folium`
+- OpenStreetMap rendering via `folium`
 - Address lookup via Nominatim (`geopy`)
 - Driving distance via the public OSRM demo endpoint (fallback to straight-line if unavailable)

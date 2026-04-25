@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Selecteer asfaltcentrale{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Selecteer asfaltcentrale</h2>
+<p class="text-muted">
+  Bestand: <code>{{ vn_filename }}</code>.
+  Kies de centrale waarvoor de GPP-berekening uitgevoerd moet worden.
+</p>
+
+<div class="row">
+  {% for plant in vn_data.plants %}
+  <div class="col-md-4 mb-3">
+    <div class="card h-100 shadow-sm">
+      <div class="card-body d-flex flex-column">
+        <h4 class="card-title">Centrale {{ plant.plant_id }}</h4>
+        <dl class="row small mb-3">
+          <dt class="col-5">Locatie</dt>
+          <dd class="col-7">{{ plant.plant_location or "—" }}</dd>
+          <dt class="col-5">Energie</dt>
+          <dd class="col-7">{{ plant.plant_energy or "—" }}</dd>
+          <dt class="col-5">Capaciteit</dt>
+          <dd class="col-7">{{ plant.plant_capacity_tph or "—" }} t/h</dd>
+          <dt class="col-5">Mengsel ID</dt>
+          <dd class="col-7">{{ plant.mixture_id or "—" }}</dd>
+          <dt class="col-5">Mengseltype</dt>
+          <dd class="col-7">{{ plant.mixture_en or "—" }}</dd>
+          <dt class="col-5">Bindmiddel %</dt>
+          <dd class="col-7">{{ plant.total_binder_pct or "—" }}</dd>
+          <dt class="col-5">Productie T°</dt>
+          <dd class="col-7">{{ plant.prod_temp_range or "—" }}
+            <small class="text-muted">(blijft GPP-default)</small></dd>
+          <dt class="col-5">Componenten</dt>
+          <dd class="col-7">{{ plant.components|length }}</dd>
+        </dl>
+        <a href="{{ url_for('vn_preview', plant_index=plant.plant_index) }}"
+           class="btn btn-primary mt-auto">
+          Selecteer & bekijk mapping
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="mt-3">
+  <a href="{{ url_for('vn_upload_page') }}" class="btn btn-outline-secondary">
+    <i class="fa fa-upload"></i> Ander bestand uploaden
+  </a>
+</div>
+{% endblock %}

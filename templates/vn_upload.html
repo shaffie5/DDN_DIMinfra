@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Verantwoordingsnota → GPP{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title mb-3">Upload Verantwoordingsnota</h2>
+        <p class="text-muted">
+          Upload een Verantwoordingsnota Excel-bestand
+          (sheet <code>Info voor GPP</code>). Het systeem leest de drie
+          asfaltcentrales uit, zodat u één centrale kunt selecteren en
+          de gegevens automatisch in de GPP-rekenmodule kunt laden.
+        </p>
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">VN Excel-bestand (.xlsx)</label>
+            <input type="file" name="vn_file" accept=".xlsx" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa fa-upload"></i> Inlezen
+          </button>
+        </form>
+
+        <hr>
+        <h5>Wat doet deze functie?</h5>
+        <ul class="small text-muted">
+          <li>Leest mengsel-, centrale- en samenstellingsgegevens uit het VN-bestand.</li>
+          <li>U kiest één van de drie asfaltcentrales (kolommen E / G / I).</li>
+          <li>Componenten worden automatisch geclassificeerd
+              (binder, ruw / fijn aggregaat, vulstof, RAP, additief).</li>
+          <li>Herkomst wordt geocodeerd; afstand tot centrale berekend
+              op basis van vrachtwagen (OSRM) of schip (haversine).</li>
+          <li>De productietemperatuur en standaard machine-instellingen
+              van de GPP-tool blijven onveranderd.</li>
+          <li>Brandstof voor vrachtwagens is steeds <code>Diesel_Euro6</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

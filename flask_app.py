@@ -39,6 +39,13 @@ try:
 except Exception:
     gpp_engine = None
 
+try:
+    import vn_parser
+    import vn_to_gpp
+except Exception:
+    vn_parser = None
+    vn_to_gpp = None
+
 # ─────────────────────────────────────────────────────────────────────
 #  App Setup
 # ─────────────────────────────────────────────────────────────────────
@@ -566,6 +573,152 @@ def api_calculate_gpp():
         return jsonify({"success": True, "results": results})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Verantwoordingsnota (VN) → GPP integration
+# ─────────────────────────────────────────────────────────────────────
+
+VN_UPLOAD_DIR = BASE_DIR / "data" / "vn_uploads"
+VN_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+@app.route("/gpp/vn", methods=["GET"])
+def vn_upload_page():
+    if vn_parser is None:
+        flash("VN parser module is not available.", "error")
+        return redirect(url_for("home"))
+    return render_template("vn_upload.html")
+
+
+@app.route("/gpp/vn", methods=["POST"])
+def vn_upload_submit():
+    if vn_parser is None:
+        flash("VN parser module is not available.", "error")
+        return redirect(url_for("home"))
+
+    uploaded = request.files.get("vn_file")
+    if not uploaded or not uploaded.filename:
+        flash("Selecteer een Verantwoordingsnota Excel-bestand.", "error")
+        return redirect(url_for("vn_upload_page"))
+
+    try:
+        raw = uploaded.read()
+        vn_data = vn_parser.parse(raw, source_filename=uploaded.filename)
+    except Exception as e:
+        flash(f"Kon het VN-bestand niet inlezen: {e}", "error")
+        return redirect(url_for("vn_upload_page"))
+
+    # Persist to disk so the user can return to the selection page later.
+    token = secrets.token_urlsafe(8)
+    save_path = VN_UPLOAD_DIR / f"vn_{token}.xlsx"
+    save_path.write_bytes(raw)
+
+    session["vn_token"] = token
+    session["vn_filename"] = uploaded.filename
+    session["vn_data"] = vn_data.to_dict()
+
+    return redirect(url_for("vn_select_plant"))
+
+
+@app.route("/gpp/vn/select", methods=["GET"])
+def vn_select_plant():
+    if "vn_data" not in session:
+        flash("Geen VN-bestand geladen. Upload eerst een bestand.", "error")
+        return redirect(url_for("vn_upload_page"))
+    return render_template(
+        "vn_select.html",
+        vn_data=session["vn_data"],
+        vn_filename=session.get("vn_filename", ""),
+    )
+
+
+@app.route("/gpp/vn/preview/<int:plant_index>", methods=["GET"])
+def vn_preview(plant_index: int):
+    if "vn_data" not in session or vn_parser is None or vn_to_gpp is None:
+        flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
+        return redirect(url_for("vn_upload_page"))
+    if plant_index not in (0, 1, 2):
+        flash("Ongeldige asfaltcentrale.", "error")
+        return redirect(url_for("vn_select_plant"))
+
+    # Re-build VNData from the dict in the session
+    plants_dicts = session["vn_data"]["plants"]
+    if plant_index >= len(plants_dicts):
+        flash("Asfaltcentrale niet gevonden in VN-bestand.", "error")
+        return redirect(url_for("vn_select_plant"))
+
+    plant = _vn_plant_from_dict(plants_dicts[plant_index])
+    mapping = vn_to_gpp.map_plant(plant)
+
+    # Cache on session for the calculate step
+    session["vn_mapping"] = mapping.to_dict()
+    session["vn_plant_index"] = plant_index
+
+    return render_template(
+        "vn_preview.html",
+        mapping=mapping.to_dict(),
+        plant_dict=plants_dicts[plant_index],
+    )
+
+
+@app.route("/gpp/vn/calculate", methods=["POST"])
+def vn_calculate():
+    if "vn_mapping" not in session:
+        flash("Geen mapping beschikbaar. Begin opnieuw.", "error")
+        return redirect(url_for("vn_upload_page"))
+    if gpp_engine is None:
+        flash("GPP engine is niet beschikbaar.", "error")
+        return redirect(url_for("vn_select_plant"))
+
+    mapping_dict = session["vn_mapping"]
+    cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
+    for c in mapping_dict.get("components", []):
+        r = c["gpp_row"]
+        cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
+        # Type column for slots that need it
+        cat = c["category"]
+        if cat in vn_to_gpp.GPP_TYPE_DEFAULTS:
+            cell_payload[f"C{r}"] = vn_to_gpp.GPP_TYPE_DEFAULTS[cat]
+        cell_payload[f"H{r}"] = c.get("origin") or ""
+        cell_payload[f"J{r}"] = c["mode_gpp"]
+        cell_payload[f"K{r}"] = c["energy_gpp"]
+        cell_payload[f"L{r}"] = (
+            int(round(c["distance_km"])) if c.get("distance_km") is not None else 0
+        )
+        for col in ("M", "N", "P", "Q"):
+            cell_payload[f"{col}{r}"] = "No"
+        cell_payload[f"O{r}"] = 0
+        cell_payload[f"R{r}"] = 0
+
+    # Minimum DDN payload — VN is the source of truth; we only need a
+    # transport-to-site stub so GPP's section 5 doesn't trip its check.
+    payload = {
+        "transport_mode": "Truck",
+        "energy_source":  "Diesel_Euro6",
+        "distance_km":    20,
+        "bruto_kg":       20000,
+    }
+
+    try:
+        engine = gpp_engine.GPPEngine()
+        results = engine.calculate(payload, extra_cells=cell_payload)
+    except Exception as e:
+        flash(f"GPP-berekening mislukt: {e}", "error")
+        return redirect(url_for("vn_preview", plant_index=session.get("vn_plant_index", 0)))
+
+    return render_template(
+        "vn_results.html",
+        results=results,
+        mapping=mapping_dict,
+    )
+
+
+def _vn_plant_from_dict(d: dict[str, Any]):
+    """Rebuild a :class:`vn_parser.VNPlant` from its serialised dict."""
+    comps = [vn_parser.VNComponent(**c) for c in d.get("components", [])]
+    plant_kwargs = {k: v for k, v in d.items() if k != "components"}
+    return vn_parser.VNPlant(components=comps, **plant_kwargs)
 
 
 @app.route("/api/demo-data")

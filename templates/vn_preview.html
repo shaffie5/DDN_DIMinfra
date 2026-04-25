@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Mapping voorbeeld{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Mapping naar GPP — Centrale {{ mapping.plant_id }}</h2>
+<p class="text-muted">
+  Locatie centrale: <strong>{{ mapping.plant_location or "—" }}</strong>
+  {% if mapping.plant_lat and mapping.plant_lon %}
+    ({{ "%.4f"|format(mapping.plant_lat) }}, {{ "%.4f"|format(mapping.plant_lon) }})
+  {% else %}
+    <span class="text-warning">— locatie kon niet worden gegeocodeerd</span>
+  {% endif %}
+</p>
+
+{% if mapping.warnings %}
+<div class="alert alert-warning">
+  <strong>Let op:</strong>
+  <ul class="mb-0">
+    {% for w in mapping.warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<h4 class="mt-4">Algemene velden</h4>
+<table class="table table-sm">
+  <thead><tr><th>GPP-cel</th><th>Waarde</th></tr></thead>
+  <tbody>
+    {% for cell, val in mapping.general_cells.items() %}
+    <tr><td><code>{{ cell }}</code></td><td>{{ val }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="small text-muted">
+  Productietemperatuur (cel <code>B21</code>) wordt bewust niet
+  overschreven en blijft op de standaardwaarde van de GPP-tool.
+</p>
+
+<h4 class="mt-4">Componenten ({{ mapping.components|length }})</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead>
+    <tr>
+      <th>VN-rij</th>
+      <th>Naam</th>
+      <th>Categorie</th>
+      <th>GPP-rij</th>
+      <th>%</th>
+      <th>Herkomst</th>
+      <th>Modus (VN)</th>
+      <th>Modus (GPP)</th>
+      <th>Energie</th>
+      <th>Afstand (km)</th>
+      <th>Methode</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in mapping.components %}
+    <tr>
+      <td>{{ c.vn_row }}</td>
+      <td>{{ c.name }}</td>
+      <td><span class="badge bg-secondary">{{ c.category }}</span></td>
+      <td><code>B{{ c.gpp_row }}</code></td>
+      <td>{{ "%.4f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ c.origin or "—" }}</td>
+      <td>{{ c.mode_vn or "—" }}</td>
+      <td>{{ c.mode_gpp }}</td>
+      <td><small>{{ c.energy_gpp }}</small></td>
+      <td>{{ c.distance_km|round(0) if c.distance_km is not none else "—" }}</td>
+      <td><small class="text-muted">{{ c.distance_method }}</small></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<form method="post" action="{{ url_for('vn_calculate') }}" class="mt-4">
+  <a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary">
+    <i class="fa fa-arrow-left"></i> Andere centrale
+  </a>
+  <button type="submit" class="btn btn-success">
+    <i class="fa fa-calculator"></i> Bereken in GPP-tool
+  </button>
+</form>
+{% endblock %}
