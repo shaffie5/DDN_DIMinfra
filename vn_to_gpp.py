@@ -37,13 +37,22 @@ PLANT_ENERGY_MAP: dict[str, str] = {
 }
 
 # VN "aanvoer per"  →  (GPP transport mode, GPP energy source)
+#
+# NOTE on ships vs barges:
+#   In Belgian/Dutch asphalt VNs the word "schip" almost always refers
+#   to an *inland* barge (binnenvaart) on the Albert canal / Maas /
+#   Schelde, NOT a sea-going ship.  We therefore default "schip" to
+#   "Barge" / Diesel.  Use the explicit term "zeeschip" (or "sea ship")
+#   when the cargo is genuinely transported by an ocean-going vessel.
 TRANSPORT_MAP: dict[str, tuple[str, str]] = {
     "vrachtwagen":  ("Truck",  "Diesel_Euro6"),
     "truck":        ("Truck",  "Diesel_Euro6"),
-    "schip":        ("Ship",   "Heavy_fuel_oil"),
-    "ship":         ("Ship",   "Heavy_fuel_oil"),
+    "schip":        ("Barge",  "Diesel"),         # inland (default)
     "binnenvaart":  ("Barge",  "Diesel"),
     "barge":        ("Barge",  "Diesel"),
+    "zeeschip":     ("Ship",   "Heavy_fuel_oil"), # sea-going only
+    "sea ship":     ("Ship",   "Heavy_fuel_oil"),
+    "ship":         ("Ship",   "Heavy_fuel_oil"),
     "trein":        ("Train",  "Diesel"),
     "train":        ("Train",  "Diesel"),
 }

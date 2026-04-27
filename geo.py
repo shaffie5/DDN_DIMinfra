@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import math
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -10,17 +12,57 @@ import requests
 
 _GEOCODE_CACHE: dict[str, "GeoPoint | None"] = {}
 
+_OVERRIDES_PATH = Path(__file__).resolve().parent / "data" / "geocode_overrides.json"
+_OVERRIDES: dict[str, tuple[float, float]] | None = None
+
+
+def _load_overrides() -> dict[str, tuple[float, float]]:
+    """Lazy-load the manual geocode override table.
+
+    File format: ``{"address string": [lat, lon], ...}``.  Keys starting
+    with ``_`` are treated as comments.  Lookup is case- and
+    whitespace-insensitive.
+    """
+    global _OVERRIDES
+    if _OVERRIDES is not None:
+        return _OVERRIDES
+    out: dict[str, tuple[float, float]] = {}
+    if _OVERRIDES_PATH.exists():
+        try:
+            raw = json.loads(_OVERRIDES_PATH.read_text(encoding="utf-8"))
+            for k, v in raw.items():
+                if k.startswith("_"):
+                    continue
+                if isinstance(v, (list, tuple)) and len(v) == 2:
+                    out[k.strip().lower()] = (float(v[0]), float(v[1]))
+        except Exception:
+            pass
+    _OVERRIDES = out
+    return out
+
 
 def geocode(query: str, timeout_s: float = 8.0) -> "GeoPoint | None":
     """Geocode a free-form address/place via Nominatim. Cached in-process.
 
-    Returns None if the query cannot be resolved.
+    Looks up :data:`_OVERRIDES_PATH` first so manually pinned addresses
+    bypass Nominatim entirely.  Returns None if the query cannot be
+    resolved.
     """
     if not query or not query.strip():
         return None
     key = query.strip().lower()
     if key in _GEOCODE_CACHE:
         return _GEOCODE_CACHE[key]
+
+    # 1) Manual override table (no network call, no rate-limit)
+    overrides = _load_overrides()
+    if key in overrides:
+        lat, lon = overrides[key]
+        gp = GeoPoint(lat=lat, lon=lon, label=f"{query} (override)")
+        _GEOCODE_CACHE[key] = gp
+        return gp
+
+    # 2) Public Nominatim
     url = "https://nominatim.openstreetmap.org/search"
     params = {"q": query, "format": "json", "limit": 1}
     headers = {"User-Agent": "DDN-DIMinfra/1.0 (geocode)"}

@@ -1,0 +1,101 @@
+{# Reusable OpenStreetMap (Leaflet) preview map.
+   Caller must set:  map_data_url = url_for('vn_map_data')  (or software_vn_map_data) #}
+<h4 class="mt-4">Kaart (OpenStreetMap)</h4>
+<div id="origins-map" style="height: 480px; border:1px solid #ccc; border-radius:6px;"></div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script>
+(async function () {
+  const map = L.map('origins-map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  const MODE_COLOR = { Truck: '#1976d2', Ship: '#0d6e3a', Barge: '#0d6e3a', Train: '#9c27b0' };
+
+  let resp;
+  try {
+    resp = await fetch({{ map_data_url|tojson }});
+  } catch (e) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Kaart kon niet geladen worden.</div>';
+    return;
+  }
+  if (!resp.ok) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Geen kaartgegevens beschikbaar.</div>';
+    return;
+  }
+  const data = await resp.json();
+  const bounds = [];
+
+  // Plant marker
+  if (data.plant && data.plant.lat != null && data.plant.lon != null) {
+    const m = L.marker([data.plant.lat, data.plant.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="background:#d32f2f;color:#fff;border-radius:50%;width:28px;height:28px;line-height:28px;text-align:center;font-weight:700;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);">P</div>',
+        iconSize: [28, 28], iconAnchor: [14, 14]
+      })
+    }).addTo(map);
+    m.bindPopup('<strong>Asfaltcentrale</strong><br>' + (data.plant.label || ''));
+    bounds.push([data.plant.lat, data.plant.lon]);
+  }
+
+  // Origin markers
+  (data.origins || []).forEach(o => {
+    const m = L.circleMarker([o.lat, o.lon], {
+      radius: 7, color: MODE_COLOR[o.mode] || '#555',
+      fillColor: MODE_COLOR[o.mode] || '#555', fillOpacity: 0.9, weight: 2
+    }).addTo(map);
+    const dist = (o.distance_km != null) ? (Math.round(o.distance_km) + ' km') : '—';
+    m.bindPopup(
+      '<strong>' + o.name + '</strong><br>' +
+      'Categorie: ' + o.category + '<br>' +
+      'Herkomst: ' + o.origin + '<br>' +
+      'Modus: ' + o.mode + '<br>' +
+      'Afstand: ' + dist
+    );
+    bounds.push([o.lat, o.lon]);
+  });
+
+  // Routes
+  (data.routes || []).forEach(r => {
+    const color = MODE_COLOR[r.mode] || '#555';
+    const dashed = (r.mode !== 'Truck');
+    L.polyline(r.coords, {
+      color: color, weight: 3, opacity: 0.8,
+      dashArray: dashed ? '6,8' : null
+    }).addTo(map).bindTooltip(r.name + ' (' + r.mode + ')');
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [30, 30] });
+  } else {
+    map.setView([50.85, 4.35], 7); // fallback: Belgium
+  }
+
+  // Legend
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div');
+    div.style.background = 'rgba(255,255,255,.9)';
+    div.style.padding = '6px 10px';
+    div.style.font = '12px/1.4 sans-serif';
+    div.style.border = '1px solid #aaa';
+    div.style.borderRadius = '4px';
+    div.innerHTML =
+      '<div><span style="display:inline-block;width:12px;height:12px;background:#d32f2f;border-radius:50%;margin-right:6px;"></span>Asfaltcentrale</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#1976d2;margin-right:6px;vertical-align:middle;"></span>Vrachtwagen (OSRM)</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#0d6e3a;border-top:2px dashed #0d6e3a;margin-right:6px;vertical-align:middle;"></span>Schip / Binnenvaart</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#9c27b0;border-top:2px dashed #9c27b0;margin-right:6px;vertical-align:middle;"></span>Trein</div>';
+    return div;
+  };
+  legend.addTo(map);
+})();
+</script>

@@ -667,6 +667,37 @@ def vn_preview(plant_index: int):
     )
 
 
+@app.route("/gpp/vn/preview/<int:plant_index>/edit", methods=["POST"])
+def vn_preview_edit(plant_index: int):
+    """Apply manual herkomst / aanvoer-per overrides and re-render."""
+    if "vn_data" not in session or vn_parser is None or vn_to_gpp is None:
+        flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
+        return redirect(url_for("vn_upload_page"))
+
+    plants_dicts = session["vn_data"]["plants"]
+    if plant_index not in (0, 1, 2) or plant_index >= len(plants_dicts):
+        flash("Ongeldige asfaltcentrale.", "error")
+        return redirect(url_for("vn_select_plant"))
+
+    plant_dict = dict(plants_dicts[plant_index])
+    plant_dict["components"] = _apply_origin_overrides(
+        plant_dict.get("components", []), request.form
+    )
+    # Optional binder override
+    bo = (request.form.get("binder_origin") or "").strip()
+    bm = (request.form.get("binder_mode") or "").strip()
+    if bo:
+        plant_dict["binder_origin"] = bo
+    if bm:
+        plant_dict["binder_mode"] = bm
+
+    plants_dicts[plant_index] = plant_dict
+    session["vn_data"]["plants"] = plants_dicts
+    session.modified = True
+
+    return redirect(url_for("vn_preview", plant_index=plant_index))
+
+
 @app.route("/gpp/vn/calculate", methods=["POST"])
 def vn_calculate():
     if "vn_mapping" not in session:
@@ -740,6 +771,99 @@ _SVN_EXTRA_KEYS = (
 )
 
 
+def _apply_origin_overrides(components: list[dict[str, Any]],
+                            form) -> list[dict[str, Any]]:
+    """Return a new component list with manual origin/mode overrides.
+
+    Form fields (one per component, indexed by VN row number):
+        origin_<vn_row>   string  (empty → keep original)
+        mode_<vn_row>     string  (empty → keep original)
+    """
+    out: list[dict[str, Any]] = []
+    for c in components:
+        c2 = dict(c)
+        row = c.get("row")
+        new_origin = (form.get(f"origin_{row}") or "").strip()
+        new_mode = (form.get(f"mode_{row}") or "").strip()
+        if new_origin:
+            c2["origin"] = new_origin
+        if new_mode:
+            c2["mode"] = new_mode
+        out.append(c2)
+    return out
+
+
+def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
+    """Build a JSON-friendly OpenStreetMap payload for the preview map.
+
+    For every component with a known origin, geocode the origin and (for
+    Truck mode) fetch the OSRM road geometry from origin → plant.  All
+    coordinates are returned as ``[lat, lon]`` pairs ready for Leaflet.
+    """
+    plant_lat = mapping_dict.get("plant_lat")
+    plant_lon = mapping_dict.get("plant_lon")
+    plant_pt = (
+        geo.GeoPoint(lat=float(plant_lat), lon=float(plant_lon),
+                     label=mapping_dict.get("plant_location") or "Plant")
+        if plant_lat is not None and plant_lon is not None else None
+    )
+
+    origins: list[dict[str, Any]] = []
+    routes: list[dict[str, Any]] = []
+    for c in mapping_dict.get("components", []):
+        if not c.get("origin"):
+            continue
+        origin_pt = geo.geocode(c["origin"])
+        if origin_pt is None:
+            continue
+        origins.append({
+            "name":     c["name"],
+            "category": c["category"],
+            "origin":   c["origin"],
+            "mode":     c["mode_gpp"],
+            "distance_km": c.get("distance_km"),
+            "lat": origin_pt.lat,
+            "lon": origin_pt.lon,
+        })
+        if not plant_pt:
+            continue
+        coords: list[tuple[float, float]] | None = None
+        if c["mode_gpp"] == "Truck":
+            coords = geo.osrm_route_geometry(origin_pt, plant_pt)
+        if not coords:
+            # Straight-line fallback for Ship/Barge/Train or OSRM failure
+            coords = [(origin_pt.lat, origin_pt.lon), (plant_pt.lat, plant_pt.lon)]
+        routes.append({
+            "name":   c["name"],
+            "mode":   c["mode_gpp"],
+            "coords": coords,
+        })
+
+    return {
+        "plant": {
+            "lat":   plant_pt.lat if plant_pt else None,
+            "lon":   plant_pt.lon if plant_pt else None,
+            "label": mapping_dict.get("plant_location") or "Plant",
+        },
+        "origins": origins,
+        "routes":  routes,
+    }
+
+
+@app.route("/gpp/vn/map.json")
+def vn_map_data():
+    if "vn_mapping" not in session:
+        return jsonify({"error": "no mapping in session"}), 404
+    return jsonify(_build_map_payload(session["vn_mapping"]))
+
+
+@app.route("/gpp/software-vn/map.json")
+def software_vn_map_data():
+    if "svn_mapping" not in session:
+        return jsonify({"error": "no mapping in session"}), 404
+    return jsonify(_build_map_payload(session["svn_mapping"]))
+
+
 @app.route("/gpp/software-vn", methods=["GET"])
 def software_vn_upload_page():
     if software_vn_parser is None:
@@ -769,6 +893,12 @@ def software_vn_upload_submit():
     token = secrets.token_urlsafe(8)
     save_path = SVN_UPLOAD_DIR / f"svn_{token}.xlsx"
     save_path.write_bytes(raw)
+
+    # Drop any stale Software-VN session keys from a previous upload so
+    # the templates always render the new parsed schema.
+    for k in ("svn_token", "svn_filename", "svn_data",
+              "svn_mapping", "svn_plant_index"):
+        session.pop(k, None)
 
     session["svn_token"] = token
     session["svn_filename"] = uploaded.filename
@@ -804,10 +934,10 @@ def software_vn_preview(plant_index: int):
         return redirect(url_for("software_vn_select_plant"))
 
     plant_dict = plants_dicts[plant_index]
-    # The base VN fields are flat in the dict; strip the SVN extras
-    # before reconstructing a VNPlant for vn_to_gpp.map_plant().
-    base_dict = {k: v for k, v in plant_dict.items() if k not in _SVN_EXTRA_KEYS}
-    plant = _vn_plant_from_dict(base_dict)
+    # Rebuild a SVNPlant (duck-compatible with VNPlant for vn_to_gpp.map_plant)
+    comps = [software_vn_parser.SVNComponent(**c) for c in plant_dict.get("components", [])]
+    plant_kwargs = {k: v for k, v in plant_dict.items() if k != "components"}
+    plant = software_vn_parser.SVNPlant(components=comps, **plant_kwargs)
     mapping = vn_to_gpp.map_plant(plant)
 
     session["svn_mapping"] = mapping.to_dict()
@@ -818,6 +948,36 @@ def software_vn_preview(plant_index: int):
         mapping=mapping.to_dict(),
         plant_dict=plant_dict,
     )
+
+
+@app.route("/gpp/software-vn/preview/<int:plant_index>/edit", methods=["POST"])
+def software_vn_preview_edit(plant_index: int):
+    """Apply manual herkomst / aanvoer-per overrides and re-render."""
+    if "svn_data" not in session or software_vn_parser is None or vn_to_gpp is None:
+        flash("Sessiegegevens verlopen. Upload het Software VN-bestand opnieuw.", "error")
+        return redirect(url_for("software_vn_upload_page"))
+
+    plants_dicts = session["svn_data"]["plants"]
+    if plant_index not in (0, 1, 2) or plant_index >= len(plants_dicts):
+        flash("Ongeldige asfaltcentrale.", "error")
+        return redirect(url_for("software_vn_select_plant"))
+
+    plant_dict = dict(plants_dicts[plant_index])
+    plant_dict["components"] = _apply_origin_overrides(
+        plant_dict.get("components", []), request.form
+    )
+    bo = (request.form.get("binder_origin") or "").strip()
+    bm = (request.form.get("binder_mode") or "").strip()
+    if bo:
+        plant_dict["binder_origin"] = bo
+    if bm:
+        plant_dict["binder_mode"] = bm
+
+    plants_dicts[plant_index] = plant_dict
+    session["svn_data"]["plants"] = plants_dicts
+    session.modified = True
+
+    return redirect(url_for("software_vn_preview", plant_index=plant_index))
 
 
 @app.route("/gpp/software-vn/calculate", methods=["POST"])

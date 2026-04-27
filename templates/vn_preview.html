@@ -93,6 +93,14 @@
 </div>
 {% endif %}
 
+{% with edit_action = url_for('vn_preview_edit', plant_index=mapping.plant_index) %}
+  {% include '_origin_edit.html' %}
+{% endwith %}
+
+{% with map_data_url = url_for('vn_map_data') %}
+  {% include '_origins_map.html' %}
+{% endwith %}
+
 <form method="post" action="{{ url_for('vn_calculate') }}" class="mt-4">
   <a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary">
     <i class="fa fa-arrow-left"></i> Andere centrale
