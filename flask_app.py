@@ -46,6 +46,11 @@ except Exception:
     vn_parser = None
     vn_to_gpp = None
 
+try:
+    import software_vn_parser
+except Exception:
+    software_vn_parser = None
+
 # ─────────────────────────────────────────────────────────────────────
 #  App Setup
 # ─────────────────────────────────────────────────────────────────────
@@ -719,6 +724,149 @@ def _vn_plant_from_dict(d: dict[str, Any]):
     comps = [vn_parser.VNComponent(**c) for c in d.get("components", [])]
     plant_kwargs = {k: v for k, v in d.items() if k != "components"}
     return vn_parser.VNPlant(components=comps, **plant_kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Software VN Routes (separate pipeline)
+# ─────────────────────────────────────────────────────────────────────
+
+SVN_UPLOAD_DIR = BASE_DIR / "data" / "software_vn_uploads"
+SVN_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+_SVN_EXTRA_KEYS = (
+    "energy_source_primary_secondary",
+    "electric_share_equipment",
+    "wheel_loader_fuel",
+)
+
+
+@app.route("/gpp/software-vn", methods=["GET"])
+def software_vn_upload_page():
+    if software_vn_parser is None:
+        flash("Software VN parser module is not available.", "error")
+        return redirect(url_for("home"))
+    return render_template("software_vn_upload.html")
+
+
+@app.route("/gpp/software-vn", methods=["POST"])
+def software_vn_upload_submit():
+    if software_vn_parser is None:
+        flash("Software VN parser module is not available.", "error")
+        return redirect(url_for("home"))
+
+    uploaded = request.files.get("svn_file")
+    if not uploaded or not uploaded.filename:
+        flash("Selecteer een Software VN Excel-bestand.", "error")
+        return redirect(url_for("software_vn_upload_page"))
+
+    try:
+        raw = uploaded.read()
+        svn_data = software_vn_parser.parse(raw, source_filename=uploaded.filename)
+    except Exception as e:
+        flash(f"Kon het Software VN-bestand niet inlezen: {e}", "error")
+        return redirect(url_for("software_vn_upload_page"))
+
+    token = secrets.token_urlsafe(8)
+    save_path = SVN_UPLOAD_DIR / f"svn_{token}.xlsx"
+    save_path.write_bytes(raw)
+
+    session["svn_token"] = token
+    session["svn_filename"] = uploaded.filename
+    session["svn_data"] = svn_data.to_dict()
+
+    return redirect(url_for("software_vn_select_plant"))
+
+
+@app.route("/gpp/software-vn/select", methods=["GET"])
+def software_vn_select_plant():
+    if "svn_data" not in session:
+        flash("Geen Software VN-bestand geladen. Upload eerst een bestand.", "error")
+        return redirect(url_for("software_vn_upload_page"))
+    return render_template(
+        "software_vn_select.html",
+        svn_data=session["svn_data"],
+        svn_filename=session.get("svn_filename", ""),
+    )
+
+
+@app.route("/gpp/software-vn/preview/<int:plant_index>", methods=["GET"])
+def software_vn_preview(plant_index: int):
+    if "svn_data" not in session or vn_parser is None or vn_to_gpp is None:
+        flash("Sessiegegevens verlopen. Upload het Software VN-bestand opnieuw.", "error")
+        return redirect(url_for("software_vn_upload_page"))
+    if plant_index not in (0, 1, 2):
+        flash("Ongeldige asfaltcentrale.", "error")
+        return redirect(url_for("software_vn_select_plant"))
+
+    plants_dicts = session["svn_data"]["plants"]
+    if plant_index >= len(plants_dicts):
+        flash("Asfaltcentrale niet gevonden in Software VN-bestand.", "error")
+        return redirect(url_for("software_vn_select_plant"))
+
+    plant_dict = plants_dicts[plant_index]
+    # The base VN fields are flat in the dict; strip the SVN extras
+    # before reconstructing a VNPlant for vn_to_gpp.map_plant().
+    base_dict = {k: v for k, v in plant_dict.items() if k not in _SVN_EXTRA_KEYS}
+    plant = _vn_plant_from_dict(base_dict)
+    mapping = vn_to_gpp.map_plant(plant)
+
+    session["svn_mapping"] = mapping.to_dict()
+    session["svn_plant_index"] = plant_index
+
+    return render_template(
+        "software_vn_preview.html",
+        mapping=mapping.to_dict(),
+        plant_dict=plant_dict,
+    )
+
+
+@app.route("/gpp/software-vn/calculate", methods=["POST"])
+def software_vn_calculate():
+    if "svn_mapping" not in session:
+        flash("Geen mapping beschikbaar. Begin opnieuw.", "error")
+        return redirect(url_for("software_vn_upload_page"))
+    if gpp_engine is None:
+        flash("GPP engine is niet beschikbaar.", "error")
+        return redirect(url_for("software_vn_select_plant"))
+
+    mapping_dict = session["svn_mapping"]
+    cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
+    for c in mapping_dict.get("components", []):
+        r = c["gpp_row"]
+        cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
+        cat = c["category"]
+        if cat in vn_to_gpp.GPP_TYPE_DEFAULTS:
+            cell_payload[f"C{r}"] = vn_to_gpp.GPP_TYPE_DEFAULTS[cat]
+        cell_payload[f"H{r}"] = c.get("origin") or ""
+        cell_payload[f"J{r}"] = c["mode_gpp"]
+        cell_payload[f"K{r}"] = c["energy_gpp"]
+        cell_payload[f"L{r}"] = (
+            int(round(c["distance_km"])) if c.get("distance_km") is not None else 0
+        )
+        for col in ("M", "N", "P", "Q"):
+            cell_payload[f"{col}{r}"] = "No"
+        cell_payload[f"O{r}"] = 0
+        cell_payload[f"R{r}"] = 0
+
+    payload = {
+        "transport_mode": "Truck",
+        "energy_source":  "Diesel_Euro6",
+        "distance_km":    20,
+        "bruto_kg":       20000,
+    }
+
+    try:
+        engine = gpp_engine.GPPEngine()
+        results = engine.calculate(payload, extra_cells=cell_payload)
+    except Exception as e:
+        flash(f"GPP-berekening mislukt: {e}", "error")
+        return redirect(url_for("software_vn_preview", plant_index=session.get("svn_plant_index", 0)))
+
+    return render_template(
+        "software_vn_results.html",
+        results=results,
+        mapping=mapping_dict,
+    )
 
 
 @app.route("/api/demo-data")

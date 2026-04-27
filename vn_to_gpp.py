@@ -18,7 +18,7 @@ Per project requirements:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from typing import Any
 
 import geo
@@ -81,6 +81,25 @@ _ADDITIVE_KEYS  = (
     "additief", "additive", "wax", "amine",
 )
 _NAT_FINE_KEYS  = ("zand", "sable", "sand")  # natural fine indicator
+
+# ─────────────────────────────────────────────────────────────────────
+#  Component exclusions  (TEMPORARY — keep code paths intact for later)
+# ─────────────────────────────────────────────────────────────────────
+# Components whose name (case-insensitive substring) matches any entry
+# below are silently dropped before mapping.  The classification logic
+# above still recognises them, so re-enabling is a one-line change.
+EXCLUDED_COMPONENT_KEYS: tuple[str, ...] = (
+    "rode kleurstof",   # Red food-/road-colouring pigment
+    "uintah",           # Uintah natural asphalt additive
+)
+
+
+def is_excluded_component(name: str | None) -> bool:
+    """Return True when the component should be skipped for now."""
+    if not name:
+        return False
+    n = name.lower()
+    return any(k in n for k in EXCLUDED_COMPONENT_KEYS)
 
 _SIZE_RE = re.compile(r"(\d+(?:[.,]\d+)?)\s*/\s*(\d+(?:[.,]\d+)?)")
 
@@ -159,6 +178,9 @@ class MappingResult:
     components: list[MappedComponent]
     warnings: list[str]
     binder_extra: dict[str, Any] | None = None  # info about virgin binder origin
+    total_pct_fraction: float = 0.0    # Σ of mapped component fractions (0..1)
+    total_distance_km: float = 0.0     # Σ of per-component distances
+    excluded_components: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -265,8 +287,21 @@ def map_plant(plant: VNPlant) -> MappingResult:
         ))
 
     # 2) Loop over composition rows.
+    excluded: list[dict[str, Any]] = []
     for comp in plant.components:
         if comp.pct <= 0 and not comp.extra:
+            continue
+        if is_excluded_component(comp.name):
+            # Skipped on purpose (red dye / Uintah). Keep a record so the
+            # UI can show what was filtered and re-enable later.
+            excluded.append({
+                "vn_row": comp.row,
+                "name":   comp.name,
+                "pct":    comp.pct,
+                "origin": comp.origin,
+                "mode":   comp.mode,
+                "reason": "EXCLUDED_COMPONENT_KEYS",
+            })
             continue
         cat = classify_component(comp.name)
         slot_list = free_slots.get(cat)
@@ -295,10 +330,16 @@ def map_plant(plant: VNPlant) -> MappingResult:
 
     # 3) Sanity-check totals (sum of fractions ≈ 1.0)
     total_frac = sum(c.pct_fraction for c in mapped)
+    total_dist = sum((c.distance_km or 0.0) for c in mapped)
     if not (0.99 <= total_frac <= 1.01):
         warnings.append(
             f"Sum of mapped component fractions = {total_frac:.4f}; "
             "GPP requires it to equal 1.00 (±0.001)."
+        )
+    if excluded:
+        warnings.append(
+            "Tijdelijk uitgesloten componenten (later opnieuw activeren): "
+            + ", ".join(f"{e['name']} ({e['pct']}%)" for e in excluded)
         )
 
     return MappingResult(
@@ -310,4 +351,7 @@ def map_plant(plant: VNPlant) -> MappingResult:
         general_cells=general_cells,
         components=mapped,
         warnings=warnings,
+        total_pct_fraction=total_frac,
+        total_distance_km=total_dist,
+        excluded_components=excluded,
     )

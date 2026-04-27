@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Mapping voorbeeld{% endblock %}
+{% block title %}Mapping voorbeeld (Software VN){% endblock %}
 
 {% block content %}
-<h2 class="mb-3">Mapping naar GPP — Centrale {{ mapping.plant_id }}</h2>
+<h2 class="mb-3">Mapping naar GPP — Centrale {{ mapping.plant_id }} <small class="text-muted">(Software VN)</small></h2>
 <p class="text-muted">
   Locatie centrale: <strong>{{ mapping.plant_location or "—" }}</strong>
   {% if mapping.plant_lat and mapping.plant_lon %}
@@ -11,6 +11,17 @@
     <span class="text-warning">— locatie kon niet worden gegeocodeerd</span>
   {% endif %}
 </p>
+
+{% if plant_dict.energy_source_primary_secondary or plant_dict.electric_share_equipment or plant_dict.wheel_loader_fuel %}
+<div class="alert alert-info">
+  <strong>Software VN extras:</strong>
+  <ul class="mb-0 small">
+    <li>Energiebron (primair/secundair): {{ plant_dict.energy_source_primary_secondary or "—" }}</li>
+    <li>Elektrisch aandeel equipment: {{ plant_dict.electric_share_equipment or "—" }}</li>
+    <li>Wheel loader fuel source: {{ plant_dict.wheel_loader_fuel or "—" }}</li>
+  </ul>
+</div>
+{% endif %}
 
 {% if mapping.warnings %}
 <div class="alert alert-warning">
@@ -30,27 +41,15 @@
     {% endfor %}
   </tbody>
 </table>
-<p class="small text-muted">
-  Productietemperatuur (cel <code>B21</code>) wordt bewust niet
-  overschreven en blijft op de standaardwaarde van de GPP-tool.
-</p>
 
 <h4 class="mt-4">Componenten ({{ mapping.components|length }})</h4>
 <div class="table-responsive">
 <table class="table table-sm table-striped align-middle">
   <thead>
     <tr>
-      <th>VN-rij</th>
-      <th>Naam</th>
-      <th>Categorie</th>
-      <th>GPP-rij</th>
-      <th>%</th>
-      <th>Herkomst</th>
-      <th>Modus (VN)</th>
-      <th>Modus (GPP)</th>
-      <th>Energie</th>
-      <th>Afstand (km)</th>
-      <th>Methode</th>
+      <th>VN-rij</th><th>Naam</th><th>Categorie</th><th>GPP-rij</th><th>%</th>
+      <th>Herkomst</th><th>Modus (VN)</th><th>Modus (GPP)</th>
+      <th>Energie</th><th>Afstand (km)</th><th>Methode</th>
     </tr>
   </thead>
   <tbody>
@@ -93,8 +92,8 @@
 </div>
 {% endif %}
 
-<form method="post" action="{{ url_for('vn_calculate') }}" class="mt-4">
-  <a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary">
+<form method="post" action="{{ url_for('software_vn_calculate') }}" class="mt-4">
+  <a href="{{ url_for('software_vn_select_plant') }}" class="btn btn-outline-secondary">
     <i class="fa fa-arrow-left"></i> Andere centrale
   </a>
   <button type="submit" class="btn btn-success">

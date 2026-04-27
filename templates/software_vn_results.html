@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}GPP-resultaten (Software VN){% endblock %}
+
+{% block content %}
+<h2 class="mb-3">GPP-resultaten — Centrale {{ mapping.plant_id }} <small class="text-muted">(Software VN)</small></h2>
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card text-center shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="text-muted">PEF single score</h6>
+        <h2 class="text-primary">
+          {{ "%.3f"|format(results.pef_score) if results.pef_score is not none else "—" }}
+        </h2>
+        <small>mPt / ton</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="text-muted">GWP totaal</h6>
+        <h2 class="text-success">
+          {{ "%.2f"|format(results.gwp_total) if results.gwp_total is not none else "—" }}
+        </h2>
+        <small>kg CO₂-eq / ton (cradle-to-gate)</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card text-center shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="text-muted">Validatiecheck</h6>
+        <h2 class="{% if results.check_ok %}text-success{% else %}text-danger{% endif %}">
+          {% if results.check_ok %}OK{% else %}Errors{% endif %}
+        </h2>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4 class="mt-4">Dashboard</h4>
+<dl class="row small">
+  {% for k, v in results.dashboard.items() %}
+  <dt class="col-md-3">{{ k }}</dt>
+  <dd class="col-md-9">{{ v }}</dd>
+  {% endfor %}
+</dl>
+
+<h4 class="mt-4">Single scores per impactcategorie</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr>
+      <th>Impactcategorie</th>
+      {% if results.single_scores and results.single_scores[0] %}
+        {% for key in results.single_scores[0].keys() if key != "category" %}
+          <th><small>{{ key }}</small></th>
+        {% endfor %}
+      {% endif %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in results.single_scores %}
+    <tr>
+      <td><strong>{{ row.category }}</strong></td>
+      {% for key, val in row.items() if key != "category" %}
+        <td>{{ "%.3e"|format(val) if val is not none else "—" }}</td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<a href="{{ url_for('software_vn_select_plant') }}" class="btn btn-outline-secondary mt-3">
+  <i class="fa fa-arrow-left"></i> Andere centrale
+</a>
+<a href="{{ url_for('software_vn_upload_page') }}" class="btn btn-outline-secondary mt-3">
+  <i class="fa fa-upload"></i> Nieuw bestand
+</a>
+{% endblock %}
