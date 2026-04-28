@@ -259,13 +259,18 @@ def classify_component(name: str) -> str:
         return "rap"
     if any(k in n for k in _ADDITIVE_KEYS):
         return "additive"
-    # Aggregate: decide via grain size + nat/synth keyword
+    # Aggregate: decide via grain size + nat/synth keyword.
+    # EN 13043 treats fractions with lower bound >= 2 mm as coarse
+    # aggregate (so 2/4, 2/6, ... are coarse, not fine).  Using a
+    # strict ``> 2.0`` here previously caused 2/4 fractions to be
+    # misclassified as crushed_fine and their % weight to be routed
+    # to the wrong GPP slot (or dropped when the fine block was full).
     m = _SIZE_RE.search(n)
     if m:
         lo = float(m.group(1).replace(",", "."))
-        if lo > 2.0:
+        if lo >= 2.0:
             return "coarse"
-        # ≤2 mm
+        # < 2 mm
         if any(k in n for k in _NAT_FINE_KEYS):
             return "natural_fine"
         return "crushed_fine"
@@ -608,9 +613,36 @@ def map_plant(plant: VNPlant) -> MappingResult:
         cat = classify_component(comp.name)
         slot_list = free_slots.get(cat)
         if not slot_list:
+            # Slot overflow: GPP only has 3 coarse / 3 crushed_fine /
+            # 3 natural_fine / 2 filler / 2 RAP / 2 other_waste / 3
+            # additive rows. If a VN exposes more components in a
+            # category we cannot just drop the % (the mixture would
+            # then sum to <100% and the calc would be invalid).
+            # Fold the extra into the largest already-mapped component
+            # of the same category and emit a CRITICAL warning so the
+            # UI surfaces it.
+            target = max(
+                (m for m in mapped if m.category == cat),
+                key=lambda m: m.pct_fraction,
+                default=None,
+            )
+            if target is None:
+                warnings.append(
+                    f"CRITICAL: GPP heeft geen {cat}-slot voor VN-rij {comp.row} "
+                    f"({comp.name!r}) en geen bestaand {cat}-component om mee te "
+                    f"voegen; {comp.pct}% wordt overgeslagen en de mengsel-totaal "
+                    f"zakt onder 100%."
+                )
+                continue
+            original_pct = target.pct_fraction * 100.0
+            target.pct_fraction += comp.pct / 100.0
+            new_pct = target.pct_fraction * 100.0
             warnings.append(
-                f"GPP has no remaining {cat} slot for VN row {comp.row} "
-                f"({comp.name!r}); component skipped."
+                f"CRITICAL: GPP heeft geen vrij {cat}-slot meer voor VN-rij "
+                f"{comp.row} ({comp.name!r}, {comp.pct}%); aandeel is "
+                f"samengevoegd met VN-rij {target.vn_row} ({target.name}) op "
+                f"GPP-rij B{target.gpp_row}: {original_pct:.2f}% + "
+                f"{comp.pct:.2f}% = {new_pct:.2f}%."
             )
             continue
         gpp_row = slot_list.pop(0)

@@ -4,15 +4,38 @@
 {% block content %}
 <h2 class="mb-3">GPP-resultaten — Centrale {{ mapping.plant_id }}</h2>
 
+{% if mapping.warnings %}
+<div class="alert alert-warning">
+  <strong>Let op:</strong>
+  <ul class="mb-0">
+    {% for w in mapping.warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# Compute Climate change row total from impact_matrix (sum across
+   all displayed lifecycle stages for the 'Climate change' category). #}
+{% set cc_ns = namespace(total=0.0, has_value=false) %}
+{% for row in results.impact_matrix %}
+  {% if row.category and row.category|lower == 'climate change' %}
+    {% for key, val in row.items() if key != 'category' %}
+      {% if val is not none %}
+        {% set cc_ns.total = cc_ns.total + val %}
+        {% set cc_ns.has_value = true %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+
 <div class="row">
   <div class="col-md-4">
     <div class="card text-center shadow-sm mb-3">
       <div class="card-body">
-        <h6 class="text-muted">PEF single score</h6>
+        <h6 class="text-muted">Climate change — totaal</h6>
         <h2 class="text-primary">
-          {{ "%.3f"|format(results.pef_score) if results.pef_score is not none else "—" }}
+          {{ "%.3e"|format(cc_ns.total) if cc_ns.has_value else "—" }}
         </h2>
-        <small>mPt / ton</small>
+        <small>kg CO₂-eq / ton (som over levenscyclus)</small>
       </div>
     </div>
   </div>
@@ -94,7 +117,7 @@
       <td>
         {% if c.distance_km is none %}—
         {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
-        {% else %}{{ "%.0f"|format(c.distance_km) }}
+        {% else %}{{ "%.1f"|format(c.distance_km) }}
         {% endif %}
       </td>
     </tr>
@@ -115,7 +138,7 @@
           <th><small>{{ key }}</small></th>
         {% endfor %}
       {% endif %}
-      <th class="table-secondary"><small><strong>Totaal</strong></small></th>
+      <th class="table-secondary"><small><strong>Totaal<br><span class="text-muted fw-normal">(A1+C3'+A2+C2'+A3+C1+D)</span></strong></small></th>
     </tr>
   </thead>
   <tbody>

@@ -60,7 +60,7 @@
       <td>{{ c.name }}</td>
       <td><span class="badge bg-secondary">{{ c.category }}</span></td>
       <td><code>B{{ c.gpp_row }}</code></td>
-      <td>{{ "%.4f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ "%.2f"|format(c.pct_fraction * 100) }}</td>
       <td>{{ c.origin or "—" }}</td>
       <td>{{ c.mode_vn or "—" }}</td>
       <td>{{ c.mode_gpp }}</td>

@@ -153,6 +153,22 @@ def _to_float(v: Any) -> float | None:
         return None
 
 
+def _to_pct(v: Any) -> float | None:
+    """Normalize a cell to a 0–100 percentage.
+
+    Excel cells formatted as Percent return their underlying fraction
+    (e.g. 5.5% → 0.055), while plain-number cells return 5.5. Treat any
+    value <= 1.0 as a fraction and scale it; values > 1 are taken as
+    already-percent.
+    """
+    f = _to_float(v)
+    if f is None:
+        return None
+    if -1.0 <= f <= 1.0:
+        return f * 100.0
+    return f
+
+
 def parse(source: str | Path | bytes | io.BytesIO,
           source_filename: str | None = None) -> VNData:
     """Parse a VN workbook from a path, bytes, or BytesIO.
@@ -196,8 +212,9 @@ def parse(source: str | Path | bytes | io.BytesIO,
             # (column D contains "%", no real component data).
             if name.lower() in {"additieven", "aggregaten"}:
                 continue
-            # Skip placeholder rows (0 % AND no qualitative metadata in D).
-            if (pct is None or pct == 0) and not extra:
+            # Skip placeholder rows (0 % AND no qualitative metadata in D)
+            # AND no operator-entered origin/mode info to preserve.
+            if (pct is None or pct == 0) and not extra and not origin and not mode:
                 continue
             components.append(VNComponent(
                 row=row,
@@ -215,8 +232,8 @@ def parse(source: str | Path | bytes | io.BytesIO,
             mixture_id=_to_str(_val(ws, ROW_MIXTURE_ID, gen_col)),
             mixture_sb250=_to_str(_val(ws, ROW_MIX_SB250, gen_col)),
             mixture_en=_to_str(_val(ws, ROW_MIX_EN, gen_col)),
-            total_binder_pct=_to_float(_val(ws, ROW_BINDER_PCT, gen_col)),
-            binder_replacement_pct=_to_float(_val(ws, ROW_BINDER_REPL, gen_col)),
+            total_binder_pct=_to_pct(_val(ws, ROW_BINDER_PCT, gen_col)),
+            binder_replacement_pct=_to_pct(_val(ws, ROW_BINDER_REPL, gen_col)),
             plant_location=_to_str(_val(ws, ROW_PLANT_LOC, gen_col)),
             plant_energy=_to_str(_val(ws, ROW_PLANT_ENERGY, gen_col)),
             plant_capacity_tph=_to_float(_val(ws, ROW_PLANT_CAP, gen_col)),
@@ -224,9 +241,9 @@ def parse(source: str | Path | bytes | io.BytesIO,
             binder_type=_to_str(_val(ws, ROW_BINDER_NAME - 0, "C")),  # fallback
             binder_origin=_to_str(_val(ws, ROW_BINDER_NAME, gen_col)),
             binder_mode=_to_str(_val(ws, ROW_BINDER_NAME, mode_col)),
-            binder_pct=_to_float(_val(ws, ROW_BINDER_PCT2, gen_col)),
+            binder_pct=_to_pct(_val(ws, ROW_BINDER_PCT2, gen_col)),
             components=components,
-            biogenic_pct=_to_float(_val(ws, ROW_BIOGENIC_PCT, gen_col)),
+            biogenic_pct=_to_pct(_val(ws, ROW_BIOGENIC_PCT, gen_col)),
             itsr=_to_float(_val(ws, ROW_ITSR, gen_col)),
             prd=_to_float(_val(ws, ROW_PRD, gen_col)),
             stiffness_e_modulus=_to_float(_val(ws, ROW_STIFF1, gen_col)),

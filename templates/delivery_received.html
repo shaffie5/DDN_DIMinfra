@@ -47,6 +47,30 @@
         {% endif %}
     </div>
 
+    <!-- Signatures Status -->
+    <div class="panel-section">
+        <div class="section-label">Signatures</div>
+        <div class="summary-card">
+            <div class="summary-section">
+                {% for role_key, role_label in role_labels.items() %}
+                {% set sig = sigs.get(role_key) %}
+                <div class="summary-row">
+                    <span>{{ role_label }}</span>
+                    <span>
+                        {% if sig %}
+                            <span style="color:#0d6e3a;font-weight:600;">&#10003; signed</span>
+                            {% if sig.signer_name %}<small style="color:#666;">by {{ sig.signer_name }}</small>{% endif %}
+                            {% if sig.signed_at %}<small style="color:#888;">({{ sig.signed_at }})</small>{% endif %}
+                        {% else %}
+                            <span style="color:#b71c1c;font-weight:600;">&#10007; pending</span>
+                        {% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
     <!-- GPP Actions -->
     <div class="panel-section">
         <div class="section-label">Environmental Impact Calculation (GPP Tool)</div>

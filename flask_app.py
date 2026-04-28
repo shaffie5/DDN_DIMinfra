@@ -12,8 +12,12 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
+import os
 import random
+import re
 import secrets
+import time
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any
@@ -28,6 +32,12 @@ import geo
 import mailer
 import ocr
 import storage
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+log = logging.getLogger("ddn")
 
 try:
     import gpp_integration
@@ -56,7 +66,40 @@ except Exception:
 # ─────────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
+# Use SECRET_KEY env var when set so sessions survive restarts (otherwise
+# a fresh random key invalidates every signing link). Fall back to an
+# ephemeral key only for local dev.
+app.secret_key = os.getenv("DDN_SECRET_KEY") or secrets.token_hex(32)
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("DDN_COOKIE_SECURE", "0") == "1",
+    MAX_CONTENT_LENGTH=int(os.getenv("DDN_MAX_UPLOAD_MB", "32")) * 1024 * 1024,
+)
+
+# Hard cap on individual base64-encoded signature payload (1 MB raw PNG
+# is already absurd for a touch signature; reject anything larger).
+MAX_SIGNATURE_BYTES = 2 * 1024 * 1024
+# Reject session_set keys that contain anything other than these chars
+# so a forged key cannot escape the per-user directory via path tricks.
+_SAFE_KEY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+# Reject session user_id tokens that don't look like a token_urlsafe(12)
+# output (16 base64url chars) so a forged cookie cannot reach arbitrary
+# directories on disk.
+_USER_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{8,64}$")
+# Conservative email pattern \u2014 not RFC-5322 complete, but rejects the
+# obvious junk (missing @, missing TLD, leading/trailing dots, spaces).
+_EMAIL_RE = re.compile(
+    r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)+$"
+)
+
+
+def _is_valid_email(addr: str | None) -> bool:
+    if not addr:
+        return False
+    addr = addr.strip()
+    return len(addr) <= 254 and bool(_EMAIL_RE.match(addr))
 
 APP_TITLE = "Digitale Leveringsbon"
 BASE_DIR = Path(__file__).resolve().parent
@@ -261,8 +304,12 @@ def create_note_submit():
     # Send emails if configured
     if mailer.email_enabled():
         for role in ROLE_LABELS:
-            email = payload["emails"].get(role)
+            email = (payload["emails"].get(role) or "").strip()
             if not email:
+                continue
+            if not _is_valid_email(email):
+                log.warning("Skipping invalid signing-email address %r for role %s", email, role)
+                flash(f"Ongeldig e-mailadres voor {role}: {email!r} — geen ondertekenmail verstuurd.", "error")
                 continue
             link = url_for("sign_page", note=note_id, role=role, _external=True)
             try:
@@ -274,8 +321,8 @@ def create_note_submit():
                         f"te ondertekenen via deze link:\n\n{link}\n"
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.exception("Failed to send signing email to %s for role %s: %s", email, role, e)
 
     return render_template(
         "note_released.html",
@@ -330,7 +377,11 @@ def receive_delivery():
         payload.get("emails", {}).get("copro"),
         payload.get("emails", {}).get("permit_holder"),
     ]
-    emails = [e for e in emails if e]
+    emails = [e.strip() for e in emails if e and e.strip()]
+    invalid = [e for e in emails if not _is_valid_email(e)]
+    if invalid:
+        log.warning("Dropping invalid arrival-notification e-mail(s): %s", invalid)
+    emails = [e for e in emails if _is_valid_email(e)]
     emailed = False
     if emails and mailer.email_enabled():
         try:
@@ -342,8 +393,8 @@ def receive_delivery():
                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")],
             )
             emailed = True
-        except Exception:
-            pass
+        except Exception as e:
+            log.exception("Failed to send arrival-notification email: %s", e)
 
     return render_template(
         "delivery_received.html",
@@ -393,6 +444,11 @@ def sign_submit():
 
     if not note_id or not role or role not in ROLE_LABELS:
         return jsonify({"error": "Ongeldige gegevens"}), 400
+    # note_id is generated server-side via secrets.token_urlsafe; reject
+    # anything that doesn't fit that shape so a forged form value cannot
+    # escape the signatures directory.
+    if not _USER_ID_RE.match(note_id):
+        return jsonify({"error": "Ongeldig leveringsbon-id"}), 400
 
     note = storage.get_note(note_id)
     if not note:
@@ -401,18 +457,31 @@ def sign_submit():
     if not signature_data:
         return jsonify({"error": "Geen handtekening vastgelegd"}), 400
 
-    # Decode base64 PNG from canvas
+    # Strip data: URL prefix
     if "," in signature_data:
         signature_data = signature_data.split(",", 1)[1]
 
+    # Reject oversize payloads before decoding (raw + base64 overhead).
+    if len(signature_data) > MAX_SIGNATURE_BYTES * 4 // 3 + 64:
+        return jsonify({"error": "Handtekening is te groot"}), 413
+
     try:
-        img_bytes = base64.b64decode(signature_data)
+        img_bytes = base64.b64decode(signature_data, validate=False)
     except Exception:
         return jsonify({"error": "Ongeldige handtekeninggegevens"}), 400
 
+    if len(img_bytes) > MAX_SIGNATURE_BYTES:
+        return jsonify({"error": "Handtekening is te groot"}), 413
+    # PNG magic bytes — reject anything else (canvas.toDataURL produces PNG).
+    if not img_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return jsonify({"error": "Ongeldig handtekeningformaat (PNG vereist)"}), 400
+
     sig_path = storage.SIGNATURES_DIR / f"{note_id}_{role}.png"
     storage.SIGNATURES_DIR.mkdir(parents=True, exist_ok=True)
-    sig_path.write_bytes(img_bytes)
+    # Atomic write so a concurrent re-sign cannot leave a partial file.
+    tmp_path = sig_path.with_suffix(".png.tmp")
+    tmp_path.write_bytes(img_bytes)
+    os.replace(tmp_path, sig_path)
 
     storage.upsert_signature(note_id, role, signer_name or None, str(sig_path))
 
@@ -599,7 +668,7 @@ SESSION_STORE_DIR.mkdir(parents=True, exist_ok=True)
 def _session_user_dir() -> Path:
     """Return (and lazily create) this user's session-store directory."""
     user = session.get("user_id")
-    if not user:
+    if not user or not _USER_ID_RE.match(str(user)):
         user = secrets.token_urlsafe(12)
         session["user_id"] = user
     udir = SESSION_STORE_DIR / user
@@ -607,44 +676,95 @@ def _session_user_dir() -> Path:
     return udir
 
 
+def _safe_session_key(key: str) -> str:
+    if not isinstance(key, str) or not _SAFE_KEY_RE.match(key):
+        raise ValueError(f"Unsafe session key: {key!r}")
+    return key
+
+
+def _validated_user_dir() -> Path | None:
+    """Resolve the current user's session dir, only if the cookie token
+    looks valid. Returns None for unknown / forged user_ids."""
+    user = session.get("user_id")
+    if not user or not _USER_ID_RE.match(str(user)):
+        return None
+    return SESSION_STORE_DIR / user
+
+
 def session_set(key: str, value: Any) -> None:
     """Persist ``value`` (JSON-serialisable) under ``key`` for this user."""
-    path = _session_user_dir() / f"{key}.json"
+    safe = _safe_session_key(key)
+    path = _session_user_dir() / f"{safe}.json"
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(value, default=str), encoding="utf-8")
-    tmp.replace(path)
+    os.replace(tmp, path)
 
 
 def session_get(key: str, default: Any = None) -> Any:
-    user = session.get("user_id")
-    if not user:
+    udir = _validated_user_dir()
+    if udir is None:
         return default
-    path = SESSION_STORE_DIR / user / f"{key}.json"
+    try:
+        safe = _safe_session_key(key)
+    except ValueError:
+        return default
+    path = udir / f"{safe}.json"
     if not path.exists():
         return default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as e:
+        log.warning("session_get(%r) failed: %s", key, e)
         return default
 
 
 def session_has(key: str) -> bool:
-    user = session.get("user_id")
-    if not user:
+    udir = _validated_user_dir()
+    if udir is None:
         return False
-    return (SESSION_STORE_DIR / user / f"{key}.json").exists()
+    try:
+        safe = _safe_session_key(key)
+    except ValueError:
+        return False
+    return (udir / f"{safe}.json").exists()
 
 
 def session_pop(key: str) -> None:
-    user = session.get("user_id")
-    if not user:
+    udir = _validated_user_dir()
+    if udir is None:
         return
-    path = SESSION_STORE_DIR / user / f"{key}.json"
+    try:
+        safe = _safe_session_key(key)
+    except ValueError:
+        return
+    path = udir / f"{safe}.json"
     if path.exists():
         try:
             path.unlink()
-        except OSError:
-            pass
+        except OSError as e:
+            log.warning("session_pop(%r) failed: %s", key, e)
+
+
+SESSION_TTL_SECONDS = int(os.getenv("DDN_SESSION_TTL_DAYS", "7")) * 86400
+
+
+def _sweep_session_store() -> None:
+    """Delete user session dirs older than SESSION_TTL_SECONDS. Best-effort."""
+    if not SESSION_STORE_DIR.exists():
+        return
+    cutoff = time.time() - SESSION_TTL_SECONDS
+    for user_dir in SESSION_STORE_DIR.iterdir():
+        if not user_dir.is_dir():
+            continue
+        try:
+            mtimes = [p.stat().st_mtime for p in user_dir.iterdir()] or [user_dir.stat().st_mtime]
+            if max(mtimes) < cutoff:
+                for p in user_dir.iterdir():
+                    p.unlink(missing_ok=True)
+                user_dir.rmdir()
+                log.info("swept session dir %s", user_dir.name)
+        except OSError as e:
+            log.warning("sweep failed for %s: %s", user_dir, e)
 
 
 @app.route("/gpp/vn", methods=["GET"])
@@ -806,8 +926,16 @@ def vn_calculate():
         return redirect(url_for("vn_preview",
                                 plant_index=session.get("vn_plant_index", 0)))
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
+    seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
         r = c["gpp_row"]
+        # Step 2b in vn_to_gpp.map_plant appends "ghost" MappedComponents
+        # for the "Extra teruggew. stof" rows; they share their gpp_row
+        # with the coarse component they were folded into and would
+        # otherwise overwrite that real coarse row's cells with zeros.
+        if r in seen_gpp_rows:
+            continue
+        seen_gpp_rows.add(r)
         cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
         # Type column for slots that need it
         cat = c["category"]
@@ -818,7 +946,8 @@ def vn_calculate():
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
         cell_payload[f"L{r}"] = (
-            int(round(c["distance_km"])) if c.get("distance_km") is not None else 0
+            max(round(c["distance_km"], 2), 0.01)
+            if c.get("distance_km") is not None else 0
         )
         for col in ("M", "N", "P", "Q"):
             cell_payload[f"{col}{r}"] = "No"
@@ -1030,7 +1159,7 @@ def software_vn_select_plant():
 
 @app.route("/gpp/software-vn/preview/<int:plant_index>", methods=["GET"])
 def software_vn_preview(plant_index: int):
-    if not session_has("svn_data") or vn_parser is None or vn_to_gpp is None:
+    if not session_has("svn_data") or software_vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het Software VN-bestand opnieuw.", "error")
         return redirect(url_for("software_vn_upload_page"))
     if plant_index not in (0, 1, 2):
@@ -1135,8 +1264,18 @@ def software_vn_calculate():
         return redirect(url_for("software_vn_preview",
                                 plant_index=session.get("svn_plant_index", 0)))
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
+    seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
         r = c["gpp_row"]
+        # Step 2b in vn_to_gpp.map_plant appends "ghost" MappedComponents
+        # for the "Extra teruggew. stof" rows that share their gpp_row
+        # with the coarse component they were folded into. Those ghosts
+        # carry pct_fraction=0 / origin="" / distance_km=None purely for
+        # UI display — if we let them through here they would clobber
+        # the real coarse row's cells (B/H/J/K/L) with zeros/blanks.
+        if r in seen_gpp_rows:
+            continue
+        seen_gpp_rows.add(r)
         cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
         cat = c["category"]
         gpp_type = vn_to_gpp.gpp_type_for(cat, c.get("name"))
@@ -1146,7 +1285,8 @@ def software_vn_calculate():
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
         cell_payload[f"L{r}"] = (
-            int(round(c["distance_km"])) if c.get("distance_km") is not None else 0
+            max(round(c["distance_km"], 2), 0.01)
+            if c.get("distance_km") is not None else 0
         )
         for col in ("M", "N", "P", "Q"):
             cell_payload[f"{col}{r}"] = "No"
@@ -1237,4 +1377,9 @@ def _safe_float(val, default=0.0):
 
 if __name__ == "__main__":
     storage.init_db()
-    app.run(debug=True, host="127.0.0.1", port=5001)
+    _sweep_session_store()
+    app.run(
+        debug=os.getenv("FLASK_DEBUG", "0") == "1",
+        host=os.getenv("DDN_HOST", "127.0.0.1"),
+        port=int(os.getenv("DDN_PORT", "5001")),
+    )

@@ -166,6 +166,34 @@ def _to_float(v: Any) -> float | None:
         return None
 
 
+def _to_pct(v: Any) -> float | None:
+    """Normalize a cell to a 0–100 percentage.
+
+    Excel cells formatted as Percent return their underlying fraction
+    (e.g. 5.5% → 0.055), while plain-number cells return 5.5. We assume
+    any value <= 1.0 was a fraction and scale it; values > 1 are taken
+    as already-percent. The 0–1 ambiguity at exactly 1.0 is treated as
+    1% (the safer assumption for binder / biogenic shares which are
+    rarely 100%).
+    """
+    f = _to_float(v)
+    if f is None:
+        return None
+    if -1.0 <= f <= 1.0:
+        return f * 100.0
+    return f
+
+
+def _to_fraction(v: Any) -> float | None:
+    """Normalize a cell to a 0–1 fraction (inverse of `_to_pct`)."""
+    f = _to_float(v)
+    if f is None:
+        return None
+    if f > 1.0:
+        return f / 100.0
+    return f
+
+
 def _clean_origin(raw: Any) -> str | None:
     s = _to_str(raw)
     if s is None:
@@ -197,14 +225,23 @@ def _normalize_yes_no(raw: Any) -> str | None:
 
 def _normalize_address(loc: str | None) -> str | None:
     """Re-arrange ``city ,zip ,street`` → ``street, zip city`` so the
-    geocoder gets a normal-looking address."""
+    geocoder gets a normal-looking address. Handles extra whitespace,
+    optional country suffix, and Belgian/Dutch 4-digit postcodes.
+    """
     if not loc:
         return loc
-    parts = [p.strip() for p in loc.split(",") if p.strip()]
+    s = " ".join(loc.split())  # collapse whitespace
+    parts = [p.strip() for p in s.split(",") if p.strip()]
+    # Look for a 4-digit postcode token; if it's the middle of a 3-part
+    # `city, zip, street` shape, flip it.
     if len(parts) == 3 and parts[1].isdigit() and len(parts[1]) == 4:
         city, zipc, street = parts
         return f"{street}, {zipc} {city}"
-    return loc
+    # 4-part with trailing country: `city, zip, street, country`
+    if len(parts) == 4 and parts[1].isdigit() and len(parts[1]) == 4:
+        city, zipc, street, country = parts
+        return f"{street}, {zipc} {city}, {country}"
+    return s
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -229,6 +266,18 @@ def parse(source: str | Path | bytes | io.BytesIO,
     ws = wb[SHEET_NAME]
 
     plants: list[SVNPlant] = []
+    # Dynamically locate the "Total" row instead of hardcoding D66 —
+    # template tweaks (added/removed rows in the composition block)
+    # would otherwise silently misread.
+    composition_total_row: int | None = None
+    for r in range(ROW_COMPOSITION_LAST + 1, ROW_COMPOSITION_LAST + 25):
+        label = _to_str(_val(ws, r, "C")) or _to_str(_val(ws, r, "B"))
+        if label and label.lower().lstrip().startswith("total"):
+            composition_total_row = r
+            break
+    if composition_total_row is None:
+        composition_total_row = ROW_COMPOSITION_TOTAL
+
     for idx in range(3):
         gen_col, mode_col = PLANT_COLS[idx]
         plant_id = _to_str(_val(ws, ROW_PLANT_HEADER, gen_col)) or f"plant_{idx + 1}"
@@ -246,7 +295,10 @@ def parse(source: str | Path | bytes | io.BytesIO,
                 continue
             if name.lower() in {"additieven", "aggregaten"}:
                 continue
-            if (pct is None or pct == 0) and not extra:
+            # Drop a row only when there is genuinely nothing to record:
+            # no %, no extra annotation, AND no operator-entered
+            # origin/mode metadata.
+            if (pct is None or pct == 0) and not extra and not origin and not mode:
                 continue
 
             components.append(SVNComponent(
@@ -265,9 +317,9 @@ def parse(source: str | Path | bytes | io.BytesIO,
             mixture_id=_to_str(_val(ws, ROW_MIXTURE_ID, gen_col)),
             mixture_sb250=_to_str(_val(ws, ROW_MIX_SB250, gen_col)),
             mixture_en=_to_str(_val(ws, ROW_MIX_EN, gen_col)),
-            total_binder_pct=_to_float(_val(ws, ROW_BINDER_PCT_TOTAL, gen_col)),
-            binder_replacement_pct=_to_float(_val(ws, ROW_BINDER_REPL, gen_col)),
-            virgin_binder_pct=_to_float(_val(ws, ROW_VIRGIN_BINDER, gen_col)),
+            total_binder_pct=_to_pct(_val(ws, ROW_BINDER_PCT_TOTAL, gen_col)),
+            binder_replacement_pct=_to_pct(_val(ws, ROW_BINDER_REPL, gen_col)),
+            virgin_binder_pct=_to_pct(_val(ws, ROW_VIRGIN_BINDER, gen_col)),
             plant_location=_normalize_address(_to_str(_val(ws, ROW_PLANT_LOC, gen_col))),
             plant_energy=_to_str(_val(ws, ROW_PLANT_ENERGY, gen_col)),
             plant_capacity_tph=_to_float(_val(ws, ROW_PLANT_CAP, gen_col)),
@@ -284,14 +336,17 @@ def parse(source: str | Path | bytes | io.BytesIO,
             # For "synthetisch pigmenteerbaar bindmiddel" the GPP-tool
             # expects the *virgin* binder %, not the total binder %.
             # Software VN row 10 (Virgin binder) is authoritative; fall
-            # back to column D of the binder row only if row 10 is empty.
+            # back to column D of the binder row only when row 10 is
+            # truly empty (None) — do NOT fall through on a legitimate
+            # 0.0 (e.g. fully recycled mix), which `or` would silently do.
             binder_pct=(
-                _to_float(_val(ws, ROW_VIRGIN_BINDER, gen_col))
-                or _to_float(_val(ws, ROW_BINDER_NAME, "D"))
+                _to_pct(_val(ws, ROW_VIRGIN_BINDER, gen_col))
+                if _val(ws, ROW_VIRGIN_BINDER, gen_col) is not None
+                else _to_pct(_val(ws, ROW_BINDER_NAME, "D"))
             ),
             components=components,
-            biogenic_pct=_to_float(_val(ws, ROW_BIOGENIC_PCT, gen_col)),
-            composition_total_pct=_to_float(_val(ws, ROW_COMPOSITION_TOTAL, "D")),
+            biogenic_pct=_to_pct(_val(ws, ROW_BIOGENIC_PCT, gen_col)),
+            composition_total_pct=_to_pct(_val(ws, composition_total_row, "D")),
             itsr=_to_float(_val(ws, ROW_ITSR, gen_col)),
             prd=_to_float(_val(ws, ROW_PRD, gen_col)),
             stiffness_e_modulus=_to_float(_val(ws, ROW_STIFF1, gen_col)),

@@ -31,7 +31,14 @@
       '<div class="alert alert-warning m-2">Geen kaartgegevens beschikbaar.</div>';
     return;
   }
-  const data = await resp.json();
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Kaartgegevens onleesbaar.</div>';
+    return;
+  }
   const bounds = [];
 
   // Plant marker

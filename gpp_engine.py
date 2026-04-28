@@ -128,12 +128,32 @@ class GPPEngine:
         shutil.copy2(GPP_TEMPLATE, work_copy)
 
         app: xw.App | None = None
+        wb = None
         try:
             app = xw.App(visible=False)
             app.display_alerts = False
             app.screen_updating = False
 
             wb = app.books.open(str(work_copy))
+
+            # Template sanity check: bail early if the workbook is
+            # missing any sheet we depend on. A surprise template swap
+            # (e.g. someone replaces the .xlsx with a different version)
+            # would otherwise blow up deep in the read phase with a
+            # cryptic KeyError after we've already written half the
+            # inputs to the wrong cells.
+            required_sheets = {
+                "Input", "Results", "DDN_Results_TP",
+                "Result Dashboard", "Aux - Check",
+            }
+            missing_sheets = required_sheets - {s.name for s in wb.sheets}
+            if missing_sheets:
+                raise RuntimeError(
+                    "GPP-template heeft niet de verwachte structuur \u2014 "
+                    f"ontbrekende sheet(s): {sorted(missing_sheets)}. "
+                    f"Verwachte template: {GPP_TEMPLATE.name}."
+                )
+
             inp = wb.sheets["Input"]
 
             # ── Write inputs ────────────────────────────────────────
@@ -192,11 +212,20 @@ class GPPEngine:
                 save_path.parent.mkdir(parents=True, exist_ok=True)
                 wb.save(str(save_path))
 
-            wb.close()
-
         finally:
+            # Always close the workbook before quitting Excel; otherwise
+            # an exception above leaks a workbook handle and the next
+            # call fights over the same temp copy.
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
             if app is not None:
-                app.quit()
+                try:
+                    app.quit()
+                except Exception:
+                    pass
             # Clean up temp directory
             shutil.rmtree(tmpdir, ignore_errors=True)
 

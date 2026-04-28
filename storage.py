@@ -23,8 +23,18 @@ def _ensure_dirs() -> None:
 
 def get_conn() -> sqlite3.Connection:
     _ensure_dirs()
-    conn = sqlite3.connect(DB_PATH)
+    # ``timeout`` makes concurrent writers wait instead of immediately
+    # raising ``database is locked``. WAL mode lets readers and writers
+    # coexist without blocking, which matters once Flask runs behind
+    # multiple workers.
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+    except sqlite3.Error:
+        pass
     return conn
 
 

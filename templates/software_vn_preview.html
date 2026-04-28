@@ -68,7 +68,7 @@
       <td>{{ c.name }}</td>
       <td><span class="badge bg-secondary">{{ c.category }}</span></td>
       <td><code>B{{ c.gpp_row }}</code></td>
-      <td>{{ "%.4f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ "%.2f"|format(c.pct_fraction * 100) }}</td>
       <td>{{ c.origin or "—" }}</td>
       <td>{{ c.mode_vn or "—" }}</td>
       <td>{{ c.mode_gpp }}</td>
@@ -76,7 +76,7 @@
       <td>
         {% if c.distance_km is none %}—
         {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
-        {% else %}{{ c.distance_km|round(0)|int }}
+        {% else %}{{ "%.1f"|format(c.distance_km) }}
         {% endif %}
       </td>
       <td><small class="text-muted">{{ c.distance_method }}</small></td>
