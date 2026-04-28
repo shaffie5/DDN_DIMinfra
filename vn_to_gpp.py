@@ -157,7 +157,21 @@ _BINDER_KEYS    = ("bindmiddel", "bitumen", "binder")
 # map it to a filler slot (type = Limestone_residue, the closest GPP
 # category) with on-site origin so A2 transport ~ 0.02 km.  The UI
 # still flags it via the `extra_recycled` tag.
-_EXTRA_RECYCLED_KEYS = ("teruggew",)
+#
+# NOTE: keep this list broad so spelling variants on different VN
+# templates ("teruggewonnen", "teruggew.", "eigen vulstof",
+# "recovered dust", "baghouse", "stoffilter") all route into the
+# pending_extra_recycled merge path.  If a row slips through, its %
+# is lost from the GPP "Mixture Components" total (sum < 100%).
+_EXTRA_RECYCLED_KEYS = (
+    "teruggew",        # "Extra teruggew. stof", "teruggewonnen ..."
+    "eigen vulstof",   # alternate VN wording
+    "eigen stof",
+    "recovered dust",
+    "recovered filler",
+    "baghouse",
+    "stoffilter",
+)
 _FILLER_KEYS    = ("vulstof", "filler")
 _RAP_KEYS       = ("asfaltgranulaat", "stapel", "rap")
 _ADDITIVE_KEYS  = (
@@ -165,6 +179,23 @@ _ADDITIVE_KEYS  = (
     "additief", "additive", "wax", "amine",
 )
 _NAT_FINE_KEYS  = ("zand", "sable", "sand")  # natural fine indicator
+
+# Coarse-aggregate rock names that have no grain-size token in the VN row.
+# Checked AFTER the size regex (which is more specific) but BEFORE the
+# generic fall-throughs.  These rocks can in theory also be sold as fine
+# aggregate, but in the VN composition table they appear in the coarse
+# block; that block convention is the disambiguator.
+_COARSE_ROCK_KEYS = (
+    "kalksteen", "limestone",
+    "porfier", "porphyry",
+    "diabaas", "diabas", "diabase",
+    "basalt",
+    "graniet", "granite",
+    "kwartsiet", "quartzite",
+    "gneiss", "gneis",
+    "dolomiet", "dolomite",
+    "grauwacke", "grauwacker",
+)
 
 # ─────────────────────────────────────────────────────────────────────
 #  Component exclusions
@@ -238,6 +269,13 @@ def classify_component(name: str) -> str:
         if any(k in n for k in _NAT_FINE_KEYS):
             return "natural_fine"
         return "crushed_fine"
+    # No grain size → try rock-type keywords (Kalksteen, Porfier, ...)
+    # before falling through to sand / additive.  Without this, a coarse
+    # aggregate row whose VN label is just the rock name (no "x/y" size
+    # token) is silently routed to the additive slot and its % vanishes
+    # from the GPP "Mixture Components" coarse block.
+    if any(k in n for k in _COARSE_ROCK_KEYS):
+        return "coarse"
     # No grain size → assume natural fine if it mentions sand
     if any(k in n for k in _NAT_FINE_KEYS):
         return "natural_fine"
@@ -351,6 +389,7 @@ class MappingResult:
         """Return a flat dict ``{cell_address: value}`` ready for the
         GPP engine to write."""
         cells: dict[str, Any] = dict(self.general_cells)
+        used_rows: set[int] = set()
         for c in self.components:
             # "Extra teruggew. stof" ghost rows share their gpp_row with
             # the virgin coarse aggregate they were merged into; skip
@@ -358,6 +397,7 @@ class MappingResult:
             if c.distance_method == "merged_into_coarse":
                 continue
             r = c.gpp_row
+            used_rows.add(r)
             cells[f"B{r}"] = round(c.pct_fraction, 6)
             gpp_type = gpp_type_for(c.category, c.name)
             if gpp_type is not None:
@@ -376,6 +416,24 @@ class MappingResult:
             else:
                 cells[f"L{r}"] = int(round(c.distance_km))
             # Route 2 / Route 3 explicitly disabled
+            cells[f"M{r}"] = "No"
+            cells[f"N{r}"] = "No"
+            cells[f"O{r}"] = 0
+            cells[f"P{r}"] = "No"
+            cells[f"Q{r}"] = "No"
+            cells[f"R{r}"] = 0
+        # Clear every composition slot we did NOT fill so the GPP template's
+        # pre-existing demo values (e.g. "Productieproces" + Truck on row 40)
+        # don't leak through and trigger the red "Do not fill Transport"
+        # mismatch on rows whose %-by-weight is 0.
+        all_rows: set[int] = {r for slots in GPP_SLOTS.values() for r in slots}
+        for r in sorted(all_rows - used_rows):
+            cells[f"B{r}"] = 0
+            cells[f"C{r}"] = ""
+            cells[f"H{r}"] = ""
+            cells[f"J{r}"] = "No"
+            cells[f"K{r}"] = "No"
+            cells[f"L{r}"] = 0
             cells[f"M{r}"] = "No"
             cells[f"N{r}"] = "No"
             cells[f"O{r}"] = 0
@@ -594,9 +652,19 @@ def map_plant(plant: VNPlant) -> MappingResult:
     #     aggregate component so it shows up as A1 primary raw material
     #     impact instead of a near-zero filler residue.
     if pending_extra_recycled:
+        # Prefer a coarse component that actually carries weight; falling
+        # back to the first coarse only if every coarse slot is 0%.  This
+        # avoids the case where the merged % lands on a ghost / zero-pct
+        # coarse row and the GPP "Mixture Components" total stays < 100%.
         coarse_target = next(
-            (m for m in mapped if m.category == "coarse"), None
+            (m for m in mapped
+             if m.category == "coarse" and m.pct_fraction > 0),
+            None,
         )
+        if coarse_target is None:
+            coarse_target = next(
+                (m for m in mapped if m.category == "coarse"), None
+            )
         extra_total_pct = sum(c.pct for c in pending_extra_recycled)
         if coarse_target is not None:
             original_pct = coarse_target.pct_fraction * 100.0
@@ -636,9 +704,20 @@ def map_plant(plant: VNPlant) -> MappingResult:
         else:
             # No virgin coarse aggregate present → fall back to the
             # original filler-slot mapping so the % is not lost.
+            # NOTE: this is a hard warning — the % will land in a filler
+            # slot instead of being attributed to coarse aggregate A1
+            # impact, which changes the EPD result.  The operator MUST
+            # verify the source VN classification before signing off.
+            names = ", ".join(
+                f"{c.name} ({c.pct}%)" for c in pending_extra_recycled
+            )
             warnings.append(
-                "Geen virgin coarse aggregate gevonden om 'Extra teruggew. "
-                "stof' in te integreren; teruggevallen op filler-slot."
+                f"WAARSCHUWING: geen virgin coarse aggregate gevonden om "
+                f"'Extra teruggew. stof' ({names}) in te integreren; "
+                f"teruggevallen op filler-slot. Controleer of een grof "
+                f"aggregaat in de VN ontbreekt of verkeerd geclassificeerd "
+                f"is (bv. een rotsnaam zonder korrelmaat-token zoals "
+                f"'Kalksteen' die per ongeluk als additive werd herkend)."
             )
             for comp in pending_extra_recycled:
                 slot_list = free_slots.get("filler")
