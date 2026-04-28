@@ -587,6 +587,65 @@ def api_calculate_gpp():
 VN_UPLOAD_DIR = BASE_DIR / "data" / "vn_uploads"
 VN_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Disk-backed session store — Flask's default cookie session is capped
+# at ~4 KB, but the parsed VN/SVN workbook + mapping easily exceed that
+# (causing "Sessiegegevens verlopen" errors after a redirect).  We keep
+# only a small per-user token in the cookie and persist the heavy
+# JSON-serialisable blobs on disk under data/session_store/<user>/.
+SESSION_STORE_DIR = BASE_DIR / "data" / "session_store"
+SESSION_STORE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _session_user_dir() -> Path:
+    """Return (and lazily create) this user's session-store directory."""
+    user = session.get("user_id")
+    if not user:
+        user = secrets.token_urlsafe(12)
+        session["user_id"] = user
+    udir = SESSION_STORE_DIR / user
+    udir.mkdir(parents=True, exist_ok=True)
+    return udir
+
+
+def session_set(key: str, value: Any) -> None:
+    """Persist ``value`` (JSON-serialisable) under ``key`` for this user."""
+    path = _session_user_dir() / f"{key}.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(value, default=str), encoding="utf-8")
+    tmp.replace(path)
+
+
+def session_get(key: str, default: Any = None) -> Any:
+    user = session.get("user_id")
+    if not user:
+        return default
+    path = SESSION_STORE_DIR / user / f"{key}.json"
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+
+
+def session_has(key: str) -> bool:
+    user = session.get("user_id")
+    if not user:
+        return False
+    return (SESSION_STORE_DIR / user / f"{key}.json").exists()
+
+
+def session_pop(key: str) -> None:
+    user = session.get("user_id")
+    if not user:
+        return
+    path = SESSION_STORE_DIR / user / f"{key}.json"
+    if path.exists():
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
 
 @app.route("/gpp/vn", methods=["GET"])
 def vn_upload_page():
@@ -621,43 +680,47 @@ def vn_upload_submit():
 
     session["vn_token"] = token
     session["vn_filename"] = uploaded.filename
-    session["vn_data"] = vn_data.to_dict()
+    session_set("vn_data", vn_data.to_dict())
+    session_pop("vn_mapping")
 
     return redirect(url_for("vn_select_plant"))
 
 
 @app.route("/gpp/vn/select", methods=["GET"])
 def vn_select_plant():
-    if "vn_data" not in session:
+    if not session_has("vn_data"):
         flash("Geen VN-bestand geladen. Upload eerst een bestand.", "error")
         return redirect(url_for("vn_upload_page"))
     return render_template(
         "vn_select.html",
-        vn_data=session["vn_data"],
+        vn_data=session_get("vn_data"),
         vn_filename=session.get("vn_filename", ""),
     )
 
 
 @app.route("/gpp/vn/preview/<int:plant_index>", methods=["GET"])
 def vn_preview(plant_index: int):
-    if "vn_data" not in session or vn_parser is None or vn_to_gpp is None:
+    if not session_has("vn_data") or vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
         return redirect(url_for("vn_upload_page"))
     if plant_index not in (0, 1, 2):
         flash("Ongeldige asfaltcentrale.", "error")
         return redirect(url_for("vn_select_plant"))
 
-    # Re-build VNData from the dict in the session
-    plants_dicts = session["vn_data"]["plants"]
+    # Re-build VNData from the dict in the session store
+    vn_data_dict = session_get("vn_data") or {}
+    plants_dicts = vn_data_dict.get("plants", [])
     if plant_index >= len(plants_dicts):
         flash("Asfaltcentrale niet gevonden in VN-bestand.", "error")
         return redirect(url_for("vn_select_plant"))
 
     plant = _vn_plant_from_dict(plants_dicts[plant_index])
     mapping = vn_to_gpp.map_plant(plant)
+    manual_dists = (session_get("vn_manual_distances") or {}).get(str(plant_index), {})
+    mapping.apply_manual_distances(manual_dists)
 
-    # Cache on session for the calculate step
-    session["vn_mapping"] = mapping.to_dict()
+    # Cache on the disk-backed store for the calculate step
+    session_set("vn_mapping", mapping.to_dict())
     session["vn_plant_index"] = plant_index
 
     return render_template(
@@ -670,11 +733,12 @@ def vn_preview(plant_index: int):
 @app.route("/gpp/vn/preview/<int:plant_index>/edit", methods=["POST"])
 def vn_preview_edit(plant_index: int):
     """Apply manual herkomst / aanvoer-per overrides and re-render."""
-    if "vn_data" not in session or vn_parser is None or vn_to_gpp is None:
+    if not session_has("vn_data") or vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
         return redirect(url_for("vn_upload_page"))
 
-    plants_dicts = session["vn_data"]["plants"]
+    vn_data_dict = session_get("vn_data") or {}
+    plants_dicts = vn_data_dict.get("plants", [])
     if plant_index not in (0, 1, 2) or plant_index >= len(plants_dicts):
         flash("Ongeldige asfaltcentrale.", "error")
         return redirect(url_for("vn_select_plant"))
@@ -692,30 +756,64 @@ def vn_preview_edit(plant_index: int):
         plant_dict["binder_mode"] = bm
 
     plants_dicts[plant_index] = plant_dict
-    session["vn_data"]["plants"] = plants_dicts
-    session.modified = True
+    vn_data_dict["plants"] = plants_dicts
+    session_set("vn_data", vn_data_dict)
+
+    # Manual distance overrides (per VN row, e.g. RAP → plant)
+    md_all = session_get("vn_manual_distances") or {}
+    md_plant = dict(md_all.get(str(plant_index), {}))
+    for key, val in request.form.items():
+        if not key.startswith("distance_"):
+            continue
+        row = key[len("distance_"):]
+        v = (val or "").strip().replace(",", ".")
+        if not v:
+            md_plant.pop(row, None)
+            continue
+        try:
+            md_plant[row] = float(v)
+        except ValueError:
+            flash(f"Ongeldige afstand voor rij {row}: {val!r}", "error")
+    md_all[str(plant_index)] = md_plant
+    session_set("vn_manual_distances", md_all)
 
     return redirect(url_for("vn_preview", plant_index=plant_index))
 
 
 @app.route("/gpp/vn/calculate", methods=["POST"])
 def vn_calculate():
-    if "vn_mapping" not in session:
+    if not session_has("vn_mapping"):
         flash("Geen mapping beschikbaar. Begin opnieuw.", "error")
         return redirect(url_for("vn_upload_page"))
     if gpp_engine is None:
         flash("GPP engine is niet beschikbaar.", "error")
         return redirect(url_for("vn_select_plant"))
 
-    mapping_dict = session["vn_mapping"]
+    mapping_dict = session_get("vn_mapping") or {}
+    # Block calculation if any required distance is still missing.
+    missing = [
+        f"VN-rij {c['vn_row']} ({c.get('name') or c.get('category')})"
+        for c in mapping_dict.get("components", [])
+        if c.get("manual_distance") and c.get("distance_km") in (None, "")
+    ]
+    if missing:
+        flash(
+            "GPP-berekening geblokkeerd \u2014 ontbrekende afstand(en) voor: "
+            + "; ".join(missing)
+            + ". Vul alle handmatige afstanden in voordat je berekent.",
+            "error",
+        )
+        return redirect(url_for("vn_preview",
+                                plant_index=session.get("vn_plant_index", 0)))
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     for c in mapping_dict.get("components", []):
         r = c["gpp_row"]
         cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
         # Type column for slots that need it
         cat = c["category"]
-        if cat in vn_to_gpp.GPP_TYPE_DEFAULTS:
-            cell_payload[f"C{r}"] = vn_to_gpp.GPP_TYPE_DEFAULTS[cat]
+        gpp_type = vn_to_gpp.gpp_type_for(cat, c.get("name"))
+        if gpp_type is not None:
+            cell_payload[f"C{r}"] = gpp_type
         cell_payload[f"H{r}"] = c.get("origin") or ""
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
@@ -736,17 +834,27 @@ def vn_calculate():
         "bruto_kg":       20000,
     }
 
+    # Where to save the populated GPP workbook so the user can download it.
+    GPP_DOWNLOAD_DIR = BASE_DIR / "output" / "gpp_filled"
+    GPP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    fname = f"GPP_VN_{secrets.token_urlsafe(6)}.xlsx"
+    save_path = GPP_DOWNLOAD_DIR / fname
+
     try:
         engine = gpp_engine.GPPEngine()
-        results = engine.calculate(payload, extra_cells=cell_payload)
+        results = engine.calculate(payload, extra_cells=cell_payload,
+                                   save_to=save_path)
     except Exception as e:
         flash(f"GPP-berekening mislukt: {e}", "error")
         return redirect(url_for("vn_preview", plant_index=session.get("vn_plant_index", 0)))
+
+    session["vn_gpp_filename"] = fname
 
     return render_template(
         "vn_results.html",
         results=results,
         mapping=mapping_dict,
+        gpp_filename=fname,
     )
 
 
@@ -852,16 +960,16 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
 
 @app.route("/gpp/vn/map.json")
 def vn_map_data():
-    if "vn_mapping" not in session:
+    if not session_has("vn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    return jsonify(_build_map_payload(session["vn_mapping"]))
+    return jsonify(_build_map_payload(session_get("vn_mapping")))
 
 
 @app.route("/gpp/software-vn/map.json")
 def software_vn_map_data():
-    if "svn_mapping" not in session:
+    if not session_has("svn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    return jsonify(_build_map_payload(session["svn_mapping"]))
+    return jsonify(_build_map_payload(session_get("svn_mapping")))
 
 
 @app.route("/gpp/software-vn", methods=["GET"])
@@ -896,39 +1004,41 @@ def software_vn_upload_submit():
 
     # Drop any stale Software-VN session keys from a previous upload so
     # the templates always render the new parsed schema.
-    for k in ("svn_token", "svn_filename", "svn_data",
-              "svn_mapping", "svn_plant_index"):
+    for k in ("svn_token", "svn_filename", "svn_plant_index"):
         session.pop(k, None)
+    session_pop("svn_data")
+    session_pop("svn_mapping")
 
     session["svn_token"] = token
     session["svn_filename"] = uploaded.filename
-    session["svn_data"] = svn_data.to_dict()
+    session_set("svn_data", svn_data.to_dict())
 
     return redirect(url_for("software_vn_select_plant"))
 
 
 @app.route("/gpp/software-vn/select", methods=["GET"])
 def software_vn_select_plant():
-    if "svn_data" not in session:
+    if not session_has("svn_data"):
         flash("Geen Software VN-bestand geladen. Upload eerst een bestand.", "error")
         return redirect(url_for("software_vn_upload_page"))
     return render_template(
         "software_vn_select.html",
-        svn_data=session["svn_data"],
+        svn_data=session_get("svn_data"),
         svn_filename=session.get("svn_filename", ""),
     )
 
 
 @app.route("/gpp/software-vn/preview/<int:plant_index>", methods=["GET"])
 def software_vn_preview(plant_index: int):
-    if "svn_data" not in session or vn_parser is None or vn_to_gpp is None:
+    if not session_has("svn_data") or vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het Software VN-bestand opnieuw.", "error")
         return redirect(url_for("software_vn_upload_page"))
     if plant_index not in (0, 1, 2):
         flash("Ongeldige asfaltcentrale.", "error")
         return redirect(url_for("software_vn_select_plant"))
 
-    plants_dicts = session["svn_data"]["plants"]
+    svn_data_dict = session_get("svn_data") or {}
+    plants_dicts = svn_data_dict.get("plants", [])
     if plant_index >= len(plants_dicts):
         flash("Asfaltcentrale niet gevonden in Software VN-bestand.", "error")
         return redirect(url_for("software_vn_select_plant"))
@@ -939,8 +1049,10 @@ def software_vn_preview(plant_index: int):
     plant_kwargs = {k: v for k, v in plant_dict.items() if k != "components"}
     plant = software_vn_parser.SVNPlant(components=comps, **plant_kwargs)
     mapping = vn_to_gpp.map_plant(plant)
+    manual_dists = (session_get("svn_manual_distances") or {}).get(str(plant_index), {})
+    mapping.apply_manual_distances(manual_dists)
 
-    session["svn_mapping"] = mapping.to_dict()
+    session_set("svn_mapping", mapping.to_dict())
     session["svn_plant_index"] = plant_index
 
     return render_template(
@@ -953,11 +1065,12 @@ def software_vn_preview(plant_index: int):
 @app.route("/gpp/software-vn/preview/<int:plant_index>/edit", methods=["POST"])
 def software_vn_preview_edit(plant_index: int):
     """Apply manual herkomst / aanvoer-per overrides and re-render."""
-    if "svn_data" not in session or software_vn_parser is None or vn_to_gpp is None:
+    if not session_has("svn_data") or software_vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het Software VN-bestand opnieuw.", "error")
         return redirect(url_for("software_vn_upload_page"))
 
-    plants_dicts = session["svn_data"]["plants"]
+    svn_data_dict = session_get("svn_data") or {}
+    plants_dicts = svn_data_dict.get("plants", [])
     if plant_index not in (0, 1, 2) or plant_index >= len(plants_dicts):
         flash("Ongeldige asfaltcentrale.", "error")
         return redirect(url_for("software_vn_select_plant"))
@@ -974,29 +1087,61 @@ def software_vn_preview_edit(plant_index: int):
         plant_dict["binder_mode"] = bm
 
     plants_dicts[plant_index] = plant_dict
-    session["svn_data"]["plants"] = plants_dicts
-    session.modified = True
+    svn_data_dict["plants"] = plants_dicts
+    session_set("svn_data", svn_data_dict)
+
+    md_all = session_get("svn_manual_distances") or {}
+    md_plant = dict(md_all.get(str(plant_index), {}))
+    for key, val in request.form.items():
+        if not key.startswith("distance_"):
+            continue
+        row = key[len("distance_"):]
+        v = (val or "").strip().replace(",", ".")
+        if not v:
+            md_plant.pop(row, None)
+            continue
+        try:
+            md_plant[row] = float(v)
+        except ValueError:
+            flash(f"Ongeldige afstand voor rij {row}: {val!r}", "error")
+    md_all[str(plant_index)] = md_plant
+    session_set("svn_manual_distances", md_all)
 
     return redirect(url_for("software_vn_preview", plant_index=plant_index))
 
 
 @app.route("/gpp/software-vn/calculate", methods=["POST"])
 def software_vn_calculate():
-    if "svn_mapping" not in session:
+    if not session_has("svn_mapping"):
         flash("Geen mapping beschikbaar. Begin opnieuw.", "error")
         return redirect(url_for("software_vn_upload_page"))
     if gpp_engine is None:
         flash("GPP engine is niet beschikbaar.", "error")
         return redirect(url_for("software_vn_select_plant"))
 
-    mapping_dict = session["svn_mapping"]
+    mapping_dict = session_get("svn_mapping") or {}
+    missing = [
+        f"VN-rij {c['vn_row']} ({c.get('name') or c.get('category')})"
+        for c in mapping_dict.get("components", [])
+        if c.get("manual_distance") and c.get("distance_km") in (None, "")
+    ]
+    if missing:
+        flash(
+            "GPP-berekening geblokkeerd \u2014 ontbrekende afstand(en) voor: "
+            + "; ".join(missing)
+            + ". Vul alle handmatige afstanden in voordat je berekent.",
+            "error",
+        )
+        return redirect(url_for("software_vn_preview",
+                                plant_index=session.get("svn_plant_index", 0)))
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     for c in mapping_dict.get("components", []):
         r = c["gpp_row"]
         cell_payload[f"B{r}"] = round(c["pct_fraction"], 6)
         cat = c["category"]
-        if cat in vn_to_gpp.GPP_TYPE_DEFAULTS:
-            cell_payload[f"C{r}"] = vn_to_gpp.GPP_TYPE_DEFAULTS[cat]
+        gpp_type = vn_to_gpp.gpp_type_for(cat, c.get("name"))
+        if gpp_type is not None:
+            cell_payload[f"C{r}"] = gpp_type
         cell_payload[f"H{r}"] = c.get("origin") or ""
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
@@ -1015,17 +1160,46 @@ def software_vn_calculate():
         "bruto_kg":       20000,
     }
 
+    GPP_DOWNLOAD_DIR = BASE_DIR / "output" / "gpp_filled"
+    GPP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    fname = f"GPP_SVN_{secrets.token_urlsafe(6)}.xlsx"
+    save_path = GPP_DOWNLOAD_DIR / fname
+
     try:
         engine = gpp_engine.GPPEngine()
-        results = engine.calculate(payload, extra_cells=cell_payload)
+        results = engine.calculate(payload, extra_cells=cell_payload,
+                                   save_to=save_path)
     except Exception as e:
         flash(f"GPP-berekening mislukt: {e}", "error")
         return redirect(url_for("software_vn_preview", plant_index=session.get("svn_plant_index", 0)))
+
+    session["svn_gpp_filename"] = fname
 
     return render_template(
         "software_vn_results.html",
         results=results,
         mapping=mapping_dict,
+        gpp_filename=fname,
+    )
+
+
+@app.route("/gpp/download/<path:filename>")
+def gpp_download(filename: str):
+    """Serve a populated GPP workbook saved by the calculate routes."""
+    # Restrict to filenames that were actually produced by this session.
+    allowed = {session.get("vn_gpp_filename"), session.get("svn_gpp_filename")}
+    if filename not in allowed:
+        flash("Bestand niet beschikbaar voor download.", "error")
+        return redirect(url_for("home"))
+    file_path = BASE_DIR / "output" / "gpp_filled" / filename
+    if not file_path.exists():
+        flash("Bestand niet gevonden.", "error")
+        return redirect(url_for("home"))
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

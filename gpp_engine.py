@@ -81,6 +81,19 @@ LIFECYCLE_STAGES: list[str] = [
     "Total A1-A5,C1,C2',C3'",
 ]
 
+# Subset of `LIFECYCLE_STAGES` we actually surface to the user.  A4, A5
+# and the two pre-aggregated totals are excluded by request: the GPP
+# results page should focus on A1, C3', A2, C2', A3, C1 and D only.
+DISPLAY_STAGES: list[str] = [
+    "A1 - Primary Raw Material",
+    "C3' - Secondary Raw Material",
+    "A2 - Transport Primary",
+    "C2' - Transport Secondary",
+    "A3 - Production",
+    "C1 - Deconstruction",
+    "D - Burdens & Savings",
+]
+
 
 # ─────────────────────────────────────────────────────────────────────
 #  Engine
@@ -90,7 +103,8 @@ class GPPEngine:
     """Drive the GPP Excel tool as a headless calculation backend."""
 
     def calculate(self, payload: dict[str, Any],
-                  extra_cells: dict[str, Any] | None = None) -> dict[str, Any]:
+                  extra_cells: dict[str, Any] | None = None,
+                  save_to: str | Path | None = None) -> dict[str, Any]:
         """Write DDN inputs, recalculate Excel, read results.
 
         Parameters
@@ -104,6 +118,10 @@ class GPPEngine:
             composition, plant info and per-component transport.
             Cells listed here are written **after** ``INPUT_CELL_MAP``
             so they take precedence.
+        save_to : str | Path | None
+            If given, the populated and recalculated workbook is saved
+            to this path before the temp copy is cleaned up. Lets the
+            caller offer a download of the filled-in GPP tool.
         """
         tmpdir = tempfile.mkdtemp(prefix="gpp_calc_")
         work_copy = Path(tmpdir) / GPP_TEMPLATE.name
@@ -167,6 +185,12 @@ class GPPEngine:
             # ── Read Aux - Check ────────────────────────────────────
             chk = wb.sheets["Aux - Check"]
             check_sum = chk.range("B11").value
+
+            # ── Optionally save populated workbook for download ─────
+            if save_to is not None:
+                save_path = Path(save_to)
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                wb.save(str(save_path))
 
             wb.close()
 
@@ -233,6 +257,8 @@ def _pack_results(
                 entry = {"category": str(row[0]).strip()}
                 # Columns C-M → indices 2..12
                 for i, stage in enumerate(LIFECYCLE_STAGES):
+                    if stage not in DISPLAY_STAGES:
+                        continue
                     entry[stage] = _safe_float(row[2 + i]) if len(row) > 2 + i else None
                 impact_matrix.append(entry)
 
@@ -245,6 +271,8 @@ def _pack_results(
                 entry = {"category": str(row[0]).strip()}
                 # Columns D-O → indices 3..14
                 for i, stage in enumerate(single_score_stages):
+                    if stage not in DISPLAY_STAGES:
+                        continue
                     entry[stage] = _safe_float(row[3 + i]) if len(row) > 3 + i else None
                 single_scores.append(entry)
 

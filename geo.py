@@ -64,28 +64,42 @@ def geocode(query: str, timeout_s: float = 8.0) -> "GeoPoint | None":
 
     # 2) Public Nominatim
     url = "https://nominatim.openstreetmap.org/search"
-    params = {"q": query, "format": "json", "limit": 1}
     headers = {"User-Agent": "DDN-DIMinfra/1.0 (geocode)"}
-    try:
-        resp = requests.get(url, params=params, headers=headers, timeout=timeout_s)
-        resp.raise_for_status()
-        data = resp.json()
-        if not data:
-            _GEOCODE_CACHE[key] = None
-            return None
-        item = data[0]
-        gp = GeoPoint(
-            lat=float(item["lat"]),
-            lon=float(item["lon"]),
-            label=item.get("display_name") or query,
-        )
-        _GEOCODE_CACHE[key] = gp
-        # be polite to the public Nominatim service
-        time.sleep(1.0)
-        return gp
-    except Exception:
-        _GEOCODE_CACHE[key] = None
-        return None
+
+    # Try the full query first; if it fails, progressively simplify
+    # ("Company, City" → "City" → last whitespace token) so e.g.
+    # "Ankersmit Maastricht" resolves to Maastricht.
+    candidates: list[str] = [query.strip()]
+    if "," in query:
+        tail = query.rsplit(",", 1)[-1].strip()
+        if tail and tail not in candidates:
+            candidates.append(tail)
+    parts = query.strip().split()
+    if len(parts) > 1 and parts[-1] not in candidates:
+        candidates.append(parts[-1])
+
+    for q in candidates:
+        params = {"q": q, "format": "json", "limit": 1}
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=timeout_s)
+            resp.raise_for_status()
+            data = resp.json()
+            if not data:
+                time.sleep(1.0)
+                continue
+            item = data[0]
+            gp = GeoPoint(
+                lat=float(item["lat"]),
+                lon=float(item["lon"]),
+                label=item.get("display_name") or query,
+            )
+            _GEOCODE_CACHE[key] = gp
+            time.sleep(1.0)
+            return gp
+        except Exception:
+            continue
+    _GEOCODE_CACHE[key] = None
+    return None
 
 
 @dataclass(frozen=True)

@@ -102,10 +102,22 @@
 {% endwith %}
 
 <form method="post" action="{{ url_for('vn_calculate') }}" class="mt-4">
+  {% set missing = mapping.needs_manual_distance or [] %}
+  {% if missing %}
+  <div class="alert alert-warning">
+    <strong>Ontbrekende afstand(en).</strong> Vul handmatig de afstand in voor:
+    <ul class="mb-0">
+      {% for m in missing %}
+      <li>VN-rij {{ m.vn_row }} &mdash; <code>{{ m.name }}</code> ({{ m.category }})</li>
+      {% endfor %}
+    </ul>
+    Zonder deze gegevens kan de GPP-berekening niet starten.
+  </div>
+  {% endif %}
   <a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary">
     <i class="fa fa-arrow-left"></i> Andere centrale
   </a>
-  <button type="submit" class="btn btn-success">
+  <button type="submit" class="btn btn-success" {% if missing %}disabled{% endif %}>
     <i class="fa fa-calculator"></i> Bereken in GPP-tool
   </button>
 </form>

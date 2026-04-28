@@ -47,6 +47,55 @@
   {% endfor %}
 </dl>
 
+{% if mapping.general_labelled %}
+<h4 class="mt-4">GPP-mapping &mdash; algemene gegevens</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr><th>GPP Input cel</th><th>Veld</th><th>Waarde</th></tr>
+  </thead>
+  <tbody>
+    {% for row in mapping.general_labelled %}
+    <tr>
+      <td><code>{{ row.cell }}</code></td>
+      <td>{{ row.label }}</td>
+      <td>{{ row.value }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if mapping.components %}
+<h4 class="mt-4">GPP-mapping &mdash; componenten</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr>
+      <th>GPP rij</th><th>Naam</th><th>Categorie</th>
+      <th>%</th><th>Oorsprong</th><th>Transport</th>
+      <th>Energie</th><th>Afstand (km)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in mapping.components %}
+    <tr>
+      <td><code>{{ c.gpp_row }}</code></td>
+      <td>{{ c.name }}</td>
+      <td><small class="text-muted">{{ c.category }}</small></td>
+      <td>{{ "%.2f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ c.origin or "—" }}</td>
+      <td>{{ c.mode_gpp }}</td>
+      <td>{{ c.energy_gpp }}</td>
+      <td>{{ "%.0f"|format(c.distance_km) if c.distance_km is not none else "—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
 <h4 class="mt-4">Single scores per impactcategorie</h4>
 <div class="table-responsive">
 <table class="table table-sm table-striped">
@@ -79,4 +128,9 @@
 <a href="{{ url_for('software_vn_upload_page') }}" class="btn btn-outline-secondary mt-3">
   <i class="fa fa-upload"></i> Nieuw bestand
 </a>
+{% if gpp_filename %}
+<a href="{{ url_for('gpp_download', filename=gpp_filename) }}" class="btn btn-success mt-3">
+  <i class="fa fa-download"></i> Download ingevuld GPP-bestand
+</a>
+{% endif %}
 {% endblock %}

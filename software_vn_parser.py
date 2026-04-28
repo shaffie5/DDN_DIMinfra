@@ -31,7 +31,11 @@ PLANT_COLS: dict[int, tuple[str, str]] = {
     2: ("I", "J"),
 }
 
-# ── Row anchors (Software VN layout, dated 2026-04-20) ──────────────
+# ── Row anchors (Software VN layout, dated 2026-04-28b) ─────────────
+# Layout in the wild (April 2026) keeps the "Virgin binder" row at 10
+# and pushes the rest of section 2/3 down accordingly.  An earlier
+# experimental Desktop variant removed row 10 — we don't support that
+# variant; users must keep the Virgin binder row.
 ROW_PLANT_HEADER       = 2
 ROW_DATE               = 4
 ROW_MIXTURE_ID         = 5
@@ -41,22 +45,26 @@ ROW_BINDER_PCT_TOTAL   = 8
 ROW_BINDER_REPL        = 9
 ROW_VIRGIN_BINDER      = 10
 ROW_PLANT_LOC          = 12
-ROW_PLANT_ENERGY       = 13
-ROW_PLANT_CAP          = 14
-ROW_ENERGY_PRIM_SEC    = 15
-ROW_PROD_TEMP          = 16
-ROW_ELECTRIC_SHARE     = 17
-ROW_WHEEL_LOADER_FUEL  = 18
-ROW_BINDER_TYPE_HDR    = 20
-ROW_BINDER_NAME        = 21
-ROW_COMPOSITION_FIRST  = 26
-ROW_COMPOSITION_LAST   = 51
-ROW_BIOGENIC_PCT       = 52
-ROW_ITSR               = 54
-ROW_PRD                = 55
-ROW_STIFF1             = 56
-ROW_STIFF2             = 57
-ROW_FATIGUE            = 58
+ROW_PLANT_ENERGY       = 13   # primary heater type (aardgas / propaan / elektrisch)
+ROW_PRIM_ENERGY_PCT    = 14   # primary heater % share (0-1 fraction)
+ROW_ENERGY_PRIM_SEC    = 15   # secondary heater type
+ROW_SEC_ENERGY_PCT     = 16   # secondary heater % share (0-1 fraction)
+ROW_PLANT_CAP          = 17
+ROW_PROD_TEMP          = 18
+ROW_ELECTRIC_SHARE     = 19   # "Ja"/"Nee" — are equipment electric?
+ROW_ELECTRIC_SOURCE    = 20   # source for the electric equipment, e.g. "Elektriciteit normaal"
+ROW_WHEEL_LOADER_FUEL  = 21
+ROW_BINDER_TYPE_HDR    = 23
+ROW_BINDER_NAME        = 24
+ROW_COMPOSITION_FIRST  = 29
+ROW_COMPOSITION_LAST   = 55
+ROW_COMPOSITION_TOTAL  = 66   # "Total ( excl. Rode Kleurstof, Trinidad, Uintah)" in column D
+ROW_BIOGENIC_PCT       = 56
+ROW_ITSR               = 58
+ROW_PRD                = 59
+ROW_STIFF1             = 60
+ROW_STIFF2             = 61
+ROW_FATIGUE            = 62
 
 
 # Origin placeholder strings that should be treated as "no origin".
@@ -91,9 +99,12 @@ class SVNPlant:
     plant_location: str | None = None
     plant_energy: str | None = None
     plant_capacity_tph: float | None = None
+    primary_energy_pct: float | None = None
     energy_source_primary_secondary: str | None = None
+    secondary_energy_pct: float | None = None
     prod_temp_range: str | None = None
     electric_share_equipment: str | None = None
+    electric_source: str | None = None
     wheel_loader_fuel: str | None = None
     binder_type: str | None = None
     binder_origin: str | None = None
@@ -101,6 +112,7 @@ class SVNPlant:
     binder_pct: float | None = None
     components: list[SVNComponent] = field(default_factory=list)
     biogenic_pct: float | None = None
+    composition_total_pct: float | None = None  # value of the VN's own "Total" cell (D66)
     itsr: float | None = None
     prd: float | None = None
     stiffness_e_modulus: float | None = None
@@ -239,9 +251,12 @@ def parse(source: str | Path | bytes | io.BytesIO,
             plant_location=_normalize_address(_to_str(_val(ws, ROW_PLANT_LOC, gen_col))),
             plant_energy=_to_str(_val(ws, ROW_PLANT_ENERGY, gen_col)),
             plant_capacity_tph=_to_float(_val(ws, ROW_PLANT_CAP, gen_col)),
+            primary_energy_pct=_to_float(_val(ws, ROW_PRIM_ENERGY_PCT, gen_col)),
             energy_source_primary_secondary=_to_str(_val(ws, ROW_ENERGY_PRIM_SEC, gen_col)),
+            secondary_energy_pct=_to_float(_val(ws, ROW_SEC_ENERGY_PCT, gen_col)),
             prod_temp_range=_to_str(_val(ws, ROW_PROD_TEMP, gen_col)),
             electric_share_equipment=_to_str(_val(ws, ROW_ELECTRIC_SHARE, gen_col)),
+            electric_source=_to_str(_val(ws, ROW_ELECTRIC_SOURCE, gen_col)),
             wheel_loader_fuel=_to_str(_val(ws, ROW_WHEEL_LOADER_FUEL, gen_col)),
             binder_type=_to_str(_val(ws, ROW_BINDER_NAME, "C")),
             binder_origin=_clean_origin(_val(ws, ROW_BINDER_NAME, gen_col)),
@@ -256,6 +271,7 @@ def parse(source: str | Path | bytes | io.BytesIO,
             ),
             components=components,
             biogenic_pct=_to_float(_val(ws, ROW_BIOGENIC_PCT, gen_col)),
+            composition_total_pct=_to_float(_val(ws, ROW_COMPOSITION_TOTAL, "D")),
             itsr=_to_float(_val(ws, ROW_ITSR, gen_col)),
             prd=_to_float(_val(ws, ROW_PRD, gen_col)),
             stiffness_e_modulus=_to_float(_val(ws, ROW_STIFF1, gen_col)),

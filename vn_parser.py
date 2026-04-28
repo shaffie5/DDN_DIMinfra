@@ -192,8 +192,9 @@ def parse(source: str | Path | bytes | io.BytesIO,
             # meaningful share / metadata.  Filler row uses string in D.
             if not name:
                 continue
-            # Skip the "Additieven" sub-header row (D = "%", no real data).
-            if name.lower() == "additieven":
+            # Skip the "Additieven" / "Aggregaten" sub-header rows
+            # (column D contains "%", no real component data).
+            if name.lower() in {"additieven", "aggregaten"}:
                 continue
             # Skip placeholder rows (0 % AND no qualitative metadata in D).
             if (pct is None or pct == 0) and not extra:

@@ -2,5 +2,7 @@
   "_comment": "Manual geocode overrides for addresses Nominatim can't resolve. Key = exact address string (case/whitespace insensitive). Value = [lat, lon].",
   "straat 1, 1000 Gaurain-Ramecroix": [50.5588, 3.5547],
   "straat 2, 2000 Antwerpen":         [51.2194, 4.4025],
-  "straat 3, 3000 Hasselt":           [50.9307, 5.3378]
+  "straat 3, 3000 Hasselt":           [50.9307, 5.3378],
+  "ankersmit maastricht":             [50.8412, 5.6890],
+  "ankersmit, maastricht":            [50.8412, 5.6890]
 }

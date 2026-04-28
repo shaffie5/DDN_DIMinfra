@@ -71,12 +71,19 @@
   </tbody>
   <tfoot>
     <tr class="table-secondary">
-      <th colspan="4" class="text-end">Totaal</th>
+      <th colspan="4" class="text-end">Totaal (gemapt)</th>
       <th>{{ "%.4f"|format((mapping.total_pct_fraction or 0) * 100) }} %</th>
       <th colspan="4"></th>
       <th>{{ mapping.total_distance_km|round(0) if mapping.total_distance_km is not none else 0 }}</th>
       <th></th>
     </tr>
+    {% if mapping.vn_composition_total_pct is not none %}
+    <tr class="table-light">
+      <th colspan="4" class="text-end">Totaal volgens VN (cel D66)</th>
+      <th>{{ "%.4f"|format(mapping.vn_composition_total_pct) }} %</th>
+      <th colspan="6" class="small text-muted">excl. Rode Kleurstof, Trinidad, Uintah</th>
+    </tr>
+    {% endif %}
   </tfoot>
 </table>
 </div>
@@ -101,10 +108,22 @@
 {% endwith %}
 
 <form method="post" action="{{ url_for('software_vn_calculate') }}" class="mt-4">
+  {% set missing = mapping.needs_manual_distance or [] %}
+  {% if missing %}
+  <div class="alert alert-warning">
+    <strong>Ontbrekende afstand(en).</strong> Vul handmatig de afstand in voor:
+    <ul class="mb-0">
+      {% for m in missing %}
+      <li>VN-rij {{ m.vn_row }} — <code>{{ m.name }}</code> ({{ m.category }})</li>
+      {% endfor %}
+    </ul>
+    Zonder deze gegevens kan de GPP-berekening niet starten.
+  </div>
+  {% endif %}
   <a href="{{ url_for('software_vn_select_plant') }}" class="btn btn-outline-secondary">
     <i class="fa fa-arrow-left"></i> Andere centrale
   </a>
-  <button type="submit" class="btn btn-success">
+  <button type="submit" class="btn btn-success" {% if missing %}disabled{% endif %}>
     <i class="fa fa-calculator"></i> Bereken in GPP-tool
   </button>
 </form>
