@@ -352,6 +352,11 @@ class MappingResult:
         GPP engine to write."""
         cells: dict[str, Any] = dict(self.general_cells)
         for c in self.components:
+            # "Extra teruggew. stof" ghost rows share their gpp_row with
+            # the virgin coarse aggregate they were merged into; skip
+            # them here so we don't overwrite the merged % with 0.
+            if c.distance_method == "merged_into_coarse":
+                continue
             r = c.gpp_row
             cells[f"B{r}"] = round(c.pct_fraction, 6)
             gpp_type = gpp_type_for(c.category, c.name)
@@ -518,6 +523,11 @@ def map_plant(plant: VNPlant) -> MappingResult:
 
     # 2) Loop over composition rows.
     excluded: list[dict[str, Any]] = []
+    # "Extra teruggew. stof" rows are not mapped to their own GPP slot;
+    # instead their % is folded into the first virgin coarse aggregate
+    # component (see step 2b below) so they contribute to A1 impact as
+    # crushed coarse aggregate rather than as a near-zero-impact filler.
+    pending_extra_recycled: list[Any] = []
     for comp in plant.components:
         if comp.pct <= 0 and not comp.extra:
             continue
@@ -533,6 +543,10 @@ def map_plant(plant: VNPlant) -> MappingResult:
                 "reason": "EXCLUDED_COMPONENT_KEYS",
             })
             continue
+        if is_extra_recycled(comp.name):
+            # Defer until after the main loop; merged into first coarse row.
+            pending_extra_recycled.append(comp)
+            continue
         cat = classify_component(comp.name)
         slot_list = free_slots.get(cat)
         if not slot_list:
@@ -547,14 +561,13 @@ def map_plant(plant: VNPlant) -> MappingResult:
         # the asphalt plant.  This depends on which RAP stockpile the
         # operator actually uses on the day, so it cannot be derived
         # from the VN file alone.  Force manual entry.
-        extra_rec = is_extra_recycled(comp.name)
         if cat == "rap":
             dist, method = None, "manual_required"
             manual = True
-        elif extra_rec or _is_onsite_origin(comp.origin):
-            # On-site (own filler from baghouse, or origin = Productieproces).
-            # Keep "Fill Transport" with a token 0.02 km on-site haul so the
-            # GPP tool's transport-check (mode set ⇒ distance > 0) passes.
+        elif _is_onsite_origin(comp.origin):
+            # On-site (origin = Productieproces).  Keep "Fill Transport"
+            # with a token 0.02 km on-site haul so the GPP tool's
+            # transport-check (mode set ⇒ distance > 0) passes.
             dist, method = 0.02, "onsite"
             manual = False
             mode_gpp, energy_gpp = "Truck", "Diesel_Euro6"
@@ -573,9 +586,84 @@ def map_plant(plant: VNPlant) -> MappingResult:
             energy_gpp=energy_gpp,
             distance_km=dist,
             distance_method=method,
-            extra_recycled=extra_rec,
+            extra_recycled=False,
             manual_distance=manual,
         ))
+
+    # 2b) Fold "Extra teruggew. stof" % into the first virgin coarse
+    #     aggregate component so it shows up as A1 primary raw material
+    #     impact instead of a near-zero filler residue.
+    if pending_extra_recycled:
+        coarse_target = next(
+            (m for m in mapped if m.category == "coarse"), None
+        )
+        extra_total_pct = sum(c.pct for c in pending_extra_recycled)
+        if coarse_target is not None:
+            original_pct = coarse_target.pct_fraction * 100.0
+            coarse_target.pct_fraction += extra_total_pct / 100.0
+            new_pct = coarse_target.pct_fraction * 100.0
+            names = ", ".join(f"{c.name} ({c.pct}%)" for c in pending_extra_recycled)
+            warnings.append(
+                f"Aanname: 'Extra teruggew. stof' ({names}) is fijn materiaal "
+                f"(filler) afkomstig uit de ruwe grondstoffen zelf — opgevangen "
+                f"in de stoffilter van de droogtrommel — en wordt daarom bij "
+                f"het aandeel van een grof aggregaat opgeteld in plaats van "
+                f"als aparte filler te worden behandeld. Toegevoegd aan VN-rij "
+                f"{coarse_target.vn_row} ({coarse_target.name}) op GPP-rij "
+                f"B{coarse_target.gpp_row}: "
+                f"{original_pct:.2f}% + {extra_total_pct:.2f}% = {new_pct:.2f}%."
+            )
+            # Keep a ghost MappedComponent in the UI for transparency so
+            # the operator still sees the recycled-dust source, but with
+            # pct_fraction = 0 so it does not double-count.
+            for comp in pending_extra_recycled:
+                mode_gpp, energy_gpp = "Truck", "Diesel_Euro6"
+                mapped.append(MappedComponent(
+                    vn_row=comp.row,
+                    name=comp.name,
+                    category="coarse",
+                    gpp_row=coarse_target.gpp_row,
+                    pct_fraction=0.0,
+                    origin=comp.origin,
+                    mode_vn=comp.mode,
+                    mode_gpp=mode_gpp,
+                    energy_gpp=energy_gpp,
+                    distance_km=0.0,
+                    distance_method="merged_into_coarse",
+                    extra_recycled=True,
+                    manual_distance=False,
+                ))
+        else:
+            # No virgin coarse aggregate present → fall back to the
+            # original filler-slot mapping so the % is not lost.
+            warnings.append(
+                "Geen virgin coarse aggregate gevonden om 'Extra teruggew. "
+                "stof' in te integreren; teruggevallen op filler-slot."
+            )
+            for comp in pending_extra_recycled:
+                slot_list = free_slots.get("filler")
+                if not slot_list:
+                    warnings.append(
+                        f"GPP has no remaining filler slot for VN row "
+                        f"{comp.row} ({comp.name!r}); component skipped."
+                    )
+                    continue
+                gpp_row = slot_list.pop(0)
+                mapped.append(MappedComponent(
+                    vn_row=comp.row,
+                    name=comp.name,
+                    category="filler",
+                    gpp_row=gpp_row,
+                    pct_fraction=comp.pct / 100.0,
+                    origin=comp.origin,
+                    mode_vn=comp.mode,
+                    mode_gpp="Truck",
+                    energy_gpp="Diesel_Euro6",
+                    distance_km=0.02,
+                    distance_method="onsite",
+                    extra_recycled=True,
+                    manual_distance=False,
+                ))
 
     # 3) Sanity-check totals (sum of fractions ≈ 1.0)
     total_frac = sum(c.pct_fraction for c in mapped)

@@ -115,15 +115,26 @@
           <th><small>{{ key }}</small></th>
         {% endfor %}
       {% endif %}
+      <th class="table-secondary"><small><strong>Totaal</strong></small></th>
     </tr>
   </thead>
   <tbody>
     {% for row in results.impact_matrix %}
+    {% set ns = namespace(total=0.0, has_value=false) %}
+    {% for key, val in row.items() if key != "category" %}
+      {% if val is not none %}
+        {% set ns.total = ns.total + val %}
+        {% set ns.has_value = true %}
+      {% endif %}
+    {% endfor %}
     <tr>
       <td><strong>{{ row.category }}</strong></td>
       {% for key, val in row.items() if key != "category" %}
         <td>{{ "%.3e"|format(val) if val is not none else "—" }}</td>
       {% endfor %}
+      <td class="table-secondary">
+        <strong>{{ "%.3e"|format(ns.total) if ns.has_value else "—" }}</strong>
+      </td>
     </tr>
     {% endfor %}
   </tbody>
