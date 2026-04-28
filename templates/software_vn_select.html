@@ -17,10 +17,22 @@
         <dl class="row small mb-3">
           <dt class="col-6">Locatie</dt>
           <dd class="col-6">{{ plant.plant_location or "—" }}</dd>
-          <dt class="col-6">Energie</dt>
+          <dt class="col-6">Type primair</dt>
           <dd class="col-6">{{ plant.plant_energy or "—" }}</dd>
-          <dt class="col-6">Energiebron (prim/sec)</dt>
+          <dt class="col-6">Energiebron (primair) %</dt>
+          <dd class="col-6">
+            {% if plant.primary_energy_pct is not none %}
+              {{ "%.0f"|format(plant.primary_energy_pct * 100) }}%
+            {% else %}—{% endif %}
+          </dd>
+          <dt class="col-6">Type secundair</dt>
           <dd class="col-6">{{ plant.energy_source_primary_secondary or "—" }}</dd>
+          <dt class="col-6">Energiebron (secundair) %</dt>
+          <dd class="col-6">
+            {% if plant.secondary_energy_pct is not none %}
+              {{ "%.0f"|format(plant.secondary_energy_pct * 100) }}%
+            {% else %}—{% endif %}
+          </dd>
           <dt class="col-6">Elektrisch aandeel</dt>
           <dd class="col-6">{{ plant.electric_share_equipment or "—" }}</dd>
           <dt class="col-6">Wheel loader fuel</dt>

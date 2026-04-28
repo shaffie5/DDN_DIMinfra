@@ -34,6 +34,9 @@
         <h2 class="{% if results.check_ok %}text-success{% else %}text-danger{% endif %}">
           {% if results.check_ok %}OK{% else %}Errors{% endif %}
         </h2>
+        {% if results.check_sum is defined and results.check_sum is not none %}
+          <small class="text-muted">som = {{ "%.4f"|format(results.check_sum) }}</small>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -88,7 +91,12 @@
       <td>{{ c.origin or "—" }}</td>
       <td>{{ c.mode_gpp }}</td>
       <td>{{ c.energy_gpp }}</td>
-      <td>{{ "%.0f"|format(c.distance_km) if c.distance_km is not none else "—" }}</td>
+      <td>
+        {% if c.distance_km is none %}—
+        {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
+        {% else %}{{ "%.0f"|format(c.distance_km) }}
+        {% endif %}
+      </td>
     </tr>
     {% endfor %}
   </tbody>
@@ -96,21 +104,21 @@
 </div>
 {% endif %}
 
-<h4 class="mt-4">Single scores per impactcategorie</h4>
+<h4 class="mt-4">Environmental Impacts per ton</h4>
 <div class="table-responsive">
 <table class="table table-sm table-striped">
   <thead>
     <tr>
       <th>Impactcategorie</th>
-      {% if results.single_scores and results.single_scores[0] %}
-        {% for key in results.single_scores[0].keys() if key != "category" %}
+      {% if results.impact_matrix and results.impact_matrix[0] %}
+        {% for key in results.impact_matrix[0].keys() if key != "category" %}
           <th><small>{{ key }}</small></th>
         {% endfor %}
       {% endif %}
     </tr>
   </thead>
   <tbody>
-    {% for row in results.single_scores %}
+    {% for row in results.impact_matrix %}
     <tr>
       <td><strong>{{ row.category }}</strong></td>
       {% for key, val in row.items() if key != "category" %}

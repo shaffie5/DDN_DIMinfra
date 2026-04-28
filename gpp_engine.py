@@ -254,7 +254,7 @@ def _pack_results(
     if impact_raw:
         for row in impact_raw:
             if row and row[0]:
-                entry = {"category": str(row[0]).strip()}
+                entry: dict[str, Any] = {"category": str(row[0]).strip()}
                 # Columns C-M → indices 2..12
                 for i, stage in enumerate(LIFECYCLE_STAGES):
                     if stage not in DISPLAY_STAGES:
@@ -268,7 +268,7 @@ def _pack_results(
     if single_raw:
         for row in single_raw:
             if row and row[0]:
-                entry = {"category": str(row[0]).strip()}
+                entry: dict[str, Any] = {"category": str(row[0]).strip()}
                 # Columns D-O → indices 3..14
                 for i, stage in enumerate(single_score_stages):
                     if stage not in DISPLAY_STAGES:
@@ -305,6 +305,7 @@ def _pack_results(
         "pef_score": _safe_float(pef_score),
         "gwp_total": _safe_float(gwp_total),
         "check_ok": check_ok,
+        "check_sum": _safe_float(check_sum),
         "impact_matrix": impact_matrix,
         "single_scores": single_scores,
         "transport_impacts": transport_impacts,

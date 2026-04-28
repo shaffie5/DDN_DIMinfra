@@ -175,6 +175,26 @@ def _clean_origin(raw: Any) -> str | None:
     return s
 
 
+# Common yes/no spellings encountered in Software VN files. The
+# canonical Dutch values are "Ja" / "Nee" — normalize English and
+# truthy/falsey variants so downstream code (and the UI) sees a
+# consistent value.
+_YES_VALUES = {"ja", "yes", "y", "true", "1", "x"}
+_NO_VALUES  = {"nee", "neen", "no", "n", "false", "0", "geen", "none"}
+
+
+def _normalize_yes_no(raw: Any) -> str | None:
+    s = _to_str(raw)
+    if s is None:
+        return None
+    key = s.lower()
+    if key in _YES_VALUES:
+        return "Ja"
+    if key in _NO_VALUES:
+        return "Nee"
+    return s
+
+
 def _normalize_address(loc: str | None) -> str | None:
     """Re-arrange ``city ,zip ,street`` → ``street, zip city`` so the
     geocoder gets a normal-looking address."""
@@ -255,7 +275,7 @@ def parse(source: str | Path | bytes | io.BytesIO,
             energy_source_primary_secondary=_to_str(_val(ws, ROW_ENERGY_PRIM_SEC, gen_col)),
             secondary_energy_pct=_to_float(_val(ws, ROW_SEC_ENERGY_PCT, gen_col)),
             prod_temp_range=_to_str(_val(ws, ROW_PROD_TEMP, gen_col)),
-            electric_share_equipment=_to_str(_val(ws, ROW_ELECTRIC_SHARE, gen_col)),
+            electric_share_equipment=_normalize_yes_no(_val(ws, ROW_ELECTRIC_SHARE, gen_col)),
             electric_source=_to_str(_val(ws, ROW_ELECTRIC_SOURCE, gen_col)),
             wheel_loader_fuel=_to_str(_val(ws, ROW_WHEEL_LOADER_FUEL, gen_col)),
             binder_type=_to_str(_val(ws, ROW_BINDER_NAME, "C")),

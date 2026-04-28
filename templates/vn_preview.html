@@ -65,7 +65,12 @@
       <td>{{ c.mode_vn or "—" }}</td>
       <td>{{ c.mode_gpp }}</td>
       <td><small>{{ c.energy_gpp }}</small></td>
-      <td>{{ c.distance_km|round(0) if c.distance_km is not none else "—" }}</td>
+      <td>
+        {% if c.distance_km is none %}—
+        {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
+        {% else %}{{ c.distance_km|round(0)|int }}
+        {% endif %}
+      </td>
       <td><small class="text-muted">{{ c.distance_method }}</small></td>
     </tr>
     {% endfor %}

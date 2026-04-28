@@ -12,11 +12,20 @@
   {% endif %}
 </p>
 
-{% if plant_dict.energy_source_primary_secondary or plant_dict.electric_share_equipment or plant_dict.wheel_loader_fuel %}
+{% if plant_dict.plant_energy or plant_dict.energy_source_primary_secondary or plant_dict.electric_share_equipment or plant_dict.wheel_loader_fuel %}
 <div class="alert alert-info">
   <strong>Software VN extras:</strong>
   <ul class="mb-0 small">
-    <li>Energiebron (primair/secundair): {{ plant_dict.energy_source_primary_secondary or "—" }}</li>
+    <li>Type primair asfaltcentrale: {{ plant_dict.plant_energy or "—" }}
+        {% if plant_dict.primary_energy_pct is not none %}
+          ({{ "%.0f"|format(plant_dict.primary_energy_pct * 100) }}%)
+        {% endif %}
+    </li>
+    <li>Type secundair asfaltcentrale: {{ plant_dict.energy_source_primary_secondary or "—" }}
+        {% if plant_dict.secondary_energy_pct is not none %}
+          ({{ "%.0f"|format(plant_dict.secondary_energy_pct * 100) }}%)
+        {% endif %}
+    </li>
     <li>Elektrisch aandeel equipment: {{ plant_dict.electric_share_equipment or "—" }}</li>
     <li>Wheel loader fuel source: {{ plant_dict.wheel_loader_fuel or "—" }}</li>
   </ul>
@@ -64,7 +73,12 @@
       <td>{{ c.mode_vn or "—" }}</td>
       <td>{{ c.mode_gpp }}</td>
       <td><small>{{ c.energy_gpp }}</small></td>
-      <td>{{ c.distance_km|round(0) if c.distance_km is not none else "—" }}</td>
+      <td>
+        {% if c.distance_km is none %}—
+        {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
+        {% else %}{{ c.distance_km|round(0)|int }}
+        {% endif %}
+      </td>
       <td><small class="text-muted">{{ c.distance_method }}</small></td>
     </tr>
     {% endfor %}
