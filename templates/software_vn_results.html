@@ -28,7 +28,9 @@
 {% endfor %}
 
 <div class="row">
-  <div class="col-md-4">
+  {% set _check_sum_zero = (results.check_sum is defined and results.check_sum is not none and ("%.4f"|format(results.check_sum)) == "0.0000") %}
+  {% set _check_pass = results.check_ok or _check_sum_zero %}
+  <div class="col-md-6">
     <div class="card text-center shadow-sm mb-3">
       <div class="card-body">
         <h6 class="text-muted">Climate change — totaal</h6>
@@ -39,23 +41,12 @@
       </div>
     </div>
   </div>
-  <div class="col-md-4">
-    <div class="card text-center shadow-sm mb-3">
-      <div class="card-body">
-        <h6 class="text-muted">GWP totaal</h6>
-        <h2 class="text-success">
-          {{ "%.2f"|format(results.gwp_total) if results.gwp_total is not none else "—" }}
-        </h2>
-        <small>kg CO₂-eq / ton (cradle-to-gate)</small>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-4">
+  <div class="col-md-6">
     <div class="card text-center shadow-sm mb-3">
       <div class="card-body">
         <h6 class="text-muted">Validatiecheck</h6>
-        <h2 class="{% if results.check_ok %}text-success{% else %}text-danger{% endif %}">
-          {% if results.check_ok %}OK{% else %}Errors{% endif %}
+        <h2 class="{% if _check_pass %}text-success{% else %}text-danger{% endif %}">
+          {% if _check_sum_zero %}No Errors.{% elif results.check_ok %}OK{% else %}Errors{% endif %}
         </h2>
         {% if results.check_sum is defined and results.check_sum is not none %}
           <small class="text-muted">som = {{ "%.4f"|format(results.check_sum) }}</small>
