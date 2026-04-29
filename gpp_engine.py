@@ -330,9 +330,15 @@ def _pack_results(
     # Check if GPP validation passes (sum of all checks should equal 0)
     check_ok = _safe_float(check_sum) == 0.0 if check_sum is not None else None
 
+    def _round1(val):
+        try:
+            return round(float(val), 1)
+        except Exception:
+            return val
+
     return {
         "pef_score": _safe_float(pef_score),
-        "gwp_total": _safe_float(gwp_total),
+        "gwp_total": _round1(_safe_float(gwp_total)),
         "check_ok": check_ok,
         "check_sum": _safe_float(check_sum),
         "impact_matrix": impact_matrix,
