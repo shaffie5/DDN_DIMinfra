@@ -58,7 +58,7 @@
     <tr>
       <th>VN-rij</th><th>Naam</th><th>Categorie</th><th>GPP-rij</th><th>%</th>
       <th>Herkomst</th><th>Modus (VN)</th><th>Modus (GPP)</th>
-      <th>Energie</th><th>Afstand (km)</th><th>Methode</th>
+      <th>Energie</th><th>Afstand (km)</th><th>Stockpile</th><th>Methode</th>
     </tr>
   </thead>
   <tbody>
@@ -79,6 +79,11 @@
         {% else %}{{ "%.1f"|format(c.distance_km) }}
         {% endif %}
       </td>
+      <td>
+        {% if c.category == 'binder' %}<small class="text-muted">n.v.t.</small>
+        {% elif c.stockpile_covered == 'Yes' %}<span class="badge bg-success">Ja</span>
+        {% else %}<span class="badge bg-secondary">Geen</span>{% endif %}
+      </td>
       <td><small class="text-muted">{{ c.distance_method }}</small></td>
     </tr>
     {% endfor %}
@@ -90,12 +95,13 @@
       <th colspan="4"></th>
       <th>{{ mapping.total_distance_km|round(0) if mapping.total_distance_km is not none else 0 }}</th>
       <th></th>
+      <th></th>
     </tr>
     {% if mapping.vn_composition_total_pct is not none %}
     <tr class="table-light">
       <th colspan="4" class="text-end">Totaal volgens VN (cel D66)</th>
       <th>{{ "%.4f"|format(mapping.vn_composition_total_pct) }} %</th>
-      <th colspan="6" class="small text-muted">excl. Rode Kleurstof, Trinidad, Uintah</th>
+      <th colspan="7" class="small text-muted">excl. Rode Kleurstof, Trinidad, Uintah</th>
     </tr>
     {% endif %}
   </tfoot>

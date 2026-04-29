@@ -50,6 +50,7 @@
       <th>Modus (GPP)</th>
       <th>Energie</th>
       <th>Afstand (km)</th>
+      <th>Stockpile</th>
       <th>Methode</th>
     </tr>
   </thead>
@@ -71,6 +72,11 @@
         {% else %}{{ c.distance_km|round(0)|int }}
         {% endif %}
       </td>
+      <td>
+        {% if c.category == 'binder' %}<small class="text-muted">n.v.t.</small>
+        {% elif c.stockpile_covered == 'Yes' %}<span class="badge bg-success">Ja</span>
+        {% else %}<span class="badge bg-secondary">Geen</span>{% endif %}
+      </td>
       <td><small class="text-muted">{{ c.distance_method }}</small></td>
     </tr>
     {% endfor %}
@@ -81,6 +87,7 @@
       <th>{{ "%.4f"|format((mapping.total_pct_fraction or 0) * 100) }} %</th>
       <th colspan="4"></th>
       <th>{{ mapping.total_distance_km|round(0) if mapping.total_distance_km is not none else 0 }}</th>
+      <th></th>
       <th></th>
     </tr>
   </tfoot>

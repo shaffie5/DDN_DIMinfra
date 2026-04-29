@@ -838,6 +838,8 @@ def vn_preview(plant_index: int):
     mapping = vn_to_gpp.map_plant(plant)
     manual_dists = (session_get("vn_manual_distances") or {}).get(str(plant_index), {})
     mapping.apply_manual_distances(manual_dists)
+    coverage = (session_get("vn_coverage") or {}).get(str(plant_index), {})
+    mapping.apply_coverage_overrides(coverage)
 
     # Cache on the disk-backed store for the calculate step
     session_set("vn_mapping", mapping.to_dict())
@@ -897,6 +899,21 @@ def vn_preview_edit(plant_index: int):
     md_all[str(plant_index)] = md_plant
     session_set("vn_manual_distances", md_all)
 
+    # Stockpile coverage overrides (Input!G{row}) per VN row.
+    cov_all = session_get("vn_coverage") or {}
+    cov_plant = dict(cov_all.get(str(plant_index), {}))
+    for key, val in request.form.items():
+        if not key.startswith("coverage_"):
+            continue
+        row = key[len("coverage_"):]
+        sv = (val or "").strip().lower()
+        if sv in ("yes", "ja"):
+            cov_plant[row] = "Yes"
+        else:
+            cov_plant[row] = "No"
+    cov_all[str(plant_index)] = cov_plant
+    session_set("vn_coverage", cov_all)
+
     return redirect(url_for("vn_preview", plant_index=plant_index))
 
 
@@ -943,6 +960,9 @@ def vn_calculate():
         if gpp_type is not None:
             cell_payload[f"C{r}"] = gpp_type
         cell_payload[f"H{r}"] = c.get("origin") or ""
+        # Stockpile coverage (Input!G{r}); not applicable to binder row.
+        if cat != "binder":
+            cell_payload[f"G{r}"] = c.get("stockpile_covered") or "No"
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
         cell_payload[f"L{r}"] = (
@@ -1180,6 +1200,8 @@ def software_vn_preview(plant_index: int):
     mapping = vn_to_gpp.map_plant(plant)
     manual_dists = (session_get("svn_manual_distances") or {}).get(str(plant_index), {})
     mapping.apply_manual_distances(manual_dists)
+    coverage = (session_get("svn_coverage") or {}).get(str(plant_index), {})
+    mapping.apply_coverage_overrides(coverage)
 
     session_set("svn_mapping", mapping.to_dict())
     session["svn_plant_index"] = plant_index
@@ -1236,6 +1258,21 @@ def software_vn_preview_edit(plant_index: int):
     md_all[str(plant_index)] = md_plant
     session_set("svn_manual_distances", md_all)
 
+    # Stockpile coverage overrides (Input!G{row}) per VN row.
+    cov_all = session_get("svn_coverage") or {}
+    cov_plant = dict(cov_all.get(str(plant_index), {}))
+    for key, val in request.form.items():
+        if not key.startswith("coverage_"):
+            continue
+        row = key[len("coverage_"):]
+        sv = (val or "").strip().lower()
+        if sv in ("yes", "ja"):
+            cov_plant[row] = "Yes"
+        else:
+            cov_plant[row] = "No"
+    cov_all[str(plant_index)] = cov_plant
+    session_set("svn_coverage", cov_all)
+
     return redirect(url_for("software_vn_preview", plant_index=plant_index))
 
 
@@ -1282,6 +1319,9 @@ def software_vn_calculate():
         if gpp_type is not None:
             cell_payload[f"C{r}"] = gpp_type
         cell_payload[f"H{r}"] = c.get("origin") or ""
+        # Stockpile coverage (Input!G{r}); not applicable to binder row.
+        if cat != "binder":
+            cell_payload[f"G{r}"] = c.get("stockpile_covered") or "No"
         cell_payload[f"J{r}"] = c["mode_gpp"]
         cell_payload[f"K{r}"] = c["energy_gpp"]
         cell_payload[f"L{r}"] = (

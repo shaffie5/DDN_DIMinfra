@@ -320,6 +320,11 @@ class MappedComponent:
     distance_method: str   # "osrm" | "haversine_x_factor" | "onsite" | "manual_required" | "skipped" | "failed"
     extra_recycled: bool = False   # True for "Extra teruggew. stof" rows
     manual_distance: bool = False  # True → user must enter distance_km
+    stockpile_covered: str = "No"  # Input!G{row} — "Yes" if stockpile is
+                                   # covered (overdekte opslag), else "No".
+                                   # Defaults to "No" (geen) per project rule;
+                                   # the operator can flip it to "Yes" via
+                                   # the manual-edit form.
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -370,6 +375,30 @@ class MappingResult:
             c.distance_method = "manual"
         self.total_distance_km = sum((c.distance_km or 0.0) for c in self.components)
 
+    def apply_coverage_overrides(self, overrides: dict[str, str]) -> None:
+        """Set per-component stockpile coverage from a {vn_row: "Yes"|"No"} map.
+
+        Values not in {"Yes", "No"} are ignored. Binder rows are skipped
+        because the GPP template has no coverage cell for them.
+        """
+        if not overrides:
+            return
+        norm: dict[str, str] = {}
+        for k, v in overrides.items():
+            if v is None:
+                continue
+            sv = str(v).strip().lower()
+            if sv in ("yes", "ja", "true", "1"):
+                norm[str(k)] = "Yes"
+            elif sv in ("no", "nee", "geen", "false", "0", ""):
+                norm[str(k)] = "No"
+        for c in self.components:
+            if c.category == "binder":
+                continue
+            v = norm.get(str(c.vn_row))
+            if v is not None:
+                c.stockpile_covered = v
+
     def general_labelled(self) -> list[dict[str, Any]]:
         """Return the populated general-info cells as an ordered list of
         ``{cell, label, value}`` rows so the UI can show *what* each
@@ -408,6 +437,11 @@ class MappingResult:
             if gpp_type is not None:
                 cells[f"C{r}"] = gpp_type
             cells[f"H{r}"] = c.origin or ""
+            # Stockpile coverage (Input!G{r}). Binder row (G39) is left
+            # untouched because the GPP template doesn't expose a
+            # coverage cell for it.
+            if c.category != "binder":
+                cells[f"G{r}"] = c.stockpile_covered or "No"
             # Route 1
             cells[f"J{r}"] = c.mode_gpp
             cells[f"K{r}"] = c.energy_gpp
@@ -436,6 +470,8 @@ class MappingResult:
             cells[f"B{r}"] = 0
             cells[f"C{r}"] = ""
             cells[f"H{r}"] = ""
+            if r != 39:  # binder row has no coverage cell
+                cells[f"G{r}"] = "No"
             cells[f"J{r}"] = "No"
             cells[f"K{r}"] = "No"
             cells[f"L{r}"] = 0

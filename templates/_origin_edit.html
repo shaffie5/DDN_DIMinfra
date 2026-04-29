@@ -20,9 +20,10 @@
         <thead>
           <tr>
             <th>VN-rij</th><th>Naam</th>
-            <th style="width:25%">Herkomst (override)</th>
-            <th style="width:15%">Aanvoer per (override)</th>
-            <th style="width:13%">Afstand km (handmatig)</th>
+            <th style="width:22%">Herkomst (override)</th>
+            <th style="width:13%">Aanvoer per (override)</th>
+            <th style="width:11%">Afstand km (handmatig)</th>
+            <th style="width:10%">Stockpile overdekt?</th>
             <th class="text-muted">Huidig</th>
           </tr>
         </thead>
@@ -60,6 +61,18 @@
                        required>
               {% else %}
                 <span class="text-muted small">auto</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.category == 'binder' %}
+                <span class="text-muted small">n.v.t.</span>
+              {% else %}
+                {% set _cov = c.stockpile_covered or 'No' %}
+                <select name="coverage_{{ c.vn_row }}"
+                        class="form-select form-select-sm">
+                  <option value="No"  {% if _cov != 'Yes' %}selected{% endif %}>Geen</option>
+                  <option value="Yes" {% if _cov == 'Yes' %}selected{% endif %}>Ja</option>
+                </select>
               {% endif %}
             </td>
             <td class="small text-muted">

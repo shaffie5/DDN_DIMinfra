@@ -166,4 +166,8 @@
   <i class="fa fa-download"></i> Download ingevuld GPP-bestand
 </a>
 {% endif %}
+
+{% with map_data_url = url_for('software_vn_map_data') %}
+  {% include '_origins_map.html' %}
+{% endwith %}
 {% endblock %}
