@@ -155,7 +155,7 @@ def extract_text(uploaded_file: BinaryIO, content_type: str | None = None,
     Parameters
     ----------
     uploaded_file : file-like
-        Streamlit ``UploadedFile`` or any binary stream.
+        Any binary stream (e.g. a Flask ``FileStorage`` or ``BytesIO``).
     content_type : str | None
         MIME type (e.g. ``"image/png"``, ``"application/pdf"``).
     filename : str | None

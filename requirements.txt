@@ -1,13 +1,11 @@
-streamlit>=1.31
+flask>=3.0
 pandas>=2.0
 openpyxl>=3.1
 pillow>=10.0
-streamlit-drawable-canvas>=0.9
-streamlit-folium>=0.20
 folium>=0.15
 geopy>=2.4
-streamlit-js-eval>=0.1
 pytesseract>=0.3
 PyMuPDF>=1.23
 xlwings>=0.33
 plotly>=5.0
+searoute>=1.5

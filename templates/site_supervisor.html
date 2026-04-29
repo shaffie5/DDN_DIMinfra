@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Site Supervisor{% endblock %}
+
+{% block content %}
+<div class="wizard-panel">
+    <div class="panel-header">
+        <h2 class="panel-title">Receive Delivery</h2>
+        <p class="panel-subtitle">Register truck arrival time for a released delivery note</p>
+    </div>
+
+    <div class="panel-section">
+        <p class="section-help" style="margin-top:0;">
+            Enter the delivery note number or select it from the released notes below.
+            When the truck arrives, press the button to record the arrival time.
+        </p>
+
+        <form method="POST" action="{{ url_for('receive_delivery') }}">
+            {% if available_notes %}
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="noteSelect">Select a released delivery note</label>
+                    <select class="form-input" name="delivery_note_no" id="noteSelect">
+                        {% for dn in available_notes %}
+                        <option value="{{ dn }}">{{ dn }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            {% else %}
+            <div class="status-warning mb-3">
+                No released delivery notes found. Waiting for the plant to release a note.
+            </div>
+            {% endif %}
+
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="manualDn">Or enter delivery note number manually</label>
+                    <input type="text" class="form-input" id="manualDn"
+                           placeholder="e.g. DDN-2026-00142">
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                Confirm Truck Arrival
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('manualDn')?.addEventListener('input', function() {
+    const sel = document.getElementById('noteSelect');
+    if (this.value.trim() && sel) {
+        // Override the select with manual value by adding a hidden input
+        let hidden = document.getElementById('manualDnHidden');
+        if (!hidden) {
+            hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'delivery_note_no';
+            hidden.id = 'manualDnHidden';
+            this.parentNode.appendChild(hidden);
+        }
+        hidden.value = this.value.trim();
+        if (sel) sel.removeAttribute('name');
+    } else {
+        const hidden = document.getElementById('manualDnHidden');
+        if (hidden) hidden.remove();
+        if (sel) sel.name = 'delivery_note_no';
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,102 @@
+{# Reusable manual-edit panel for component origin + transport mode.
+   Caller must set:
+     edit_action  = url_for('vn_preview_edit', plant_index=...)
+     binder_origin = mapping.binder_origin or plant_dict.binder_origin (optional pre-fill)
+     binder_mode   = mapping.binder_mode (optional)  #}
+<details class="mt-3">
+  <summary class="btn btn-outline-primary">
+    <i class="fa fa-pen"></i> Herkomst / aanvoer per handmatig bewerken
+  </summary>
+  <form method="post" action="{{ edit_action }}" class="mt-3 p-3 border rounded bg-light">
+    <p class="small text-muted mb-2">
+      Vul alleen in wat je wil overschrijven; lege velden behouden de
+      oorspronkelijke waarde uit het VN-bestand.
+      <br>Geldige <em>aanvoer per</em>-waarden:
+      <code>vrachtwagen</code>, <code>schip</code> (= binnenvaart, default),
+      <code>binnenvaart</code>, <code>zeeschip</code>, <code>trein</code>.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>VN-rij</th><th>Naam</th>
+            <th style="width:22%">Herkomst (override)</th>
+            <th style="width:13%">Aanvoer per (override)</th>
+            <th style="width:11%">Afstand km (handmatig)</th>
+            <th style="width:10%">Stockpile overdekt?</th>
+            <th class="text-muted">Huidig</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in mapping.components %}
+          <tr {% if c.manual_distance %}class="table-warning"{% endif %}>
+            <td>{{ c.vn_row }}</td>
+            <td>
+              {{ c.name }}
+              {% if c.extra_recycled %}
+                <span class="badge bg-info text-dark" title="Wordt bij de aggregaten geteld">extra teruggew.</span>
+              {% endif %}
+              {% if c.manual_distance %}
+                <span class="badge bg-warning text-dark" title="Vul de afstand handmatig in">handmatige afstand vereist</span>
+              {% endif %}
+            </td>
+            <td>
+              <input type="text" name="origin_{{ c.vn_row }}"
+                     class="form-control form-control-sm"
+                     placeholder="{{ c.origin or '— nog niets ingevuld —' }}">
+            </td>
+            <td>
+              <input type="text" name="mode_{{ c.vn_row }}"
+                     list="mode-options"
+                     class="form-control form-control-sm"
+                     placeholder="{{ c.mode_vn or 'vrachtwagen' }}">
+            </td>
+            <td>
+              {% if c.manual_distance %}
+                <input type="number" step="0.1" min="0"
+                       name="distance_{{ c.vn_row }}"
+                       class="form-control form-control-sm"
+                       value="{{ c.distance_km if c.distance_km is not none else '' }}"
+                       placeholder="km vanaf freeslocatie"
+                       required>
+              {% else %}
+                <span class="text-muted small">auto</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if c.category == 'binder' %}
+                <span class="text-muted small">n.v.t.</span>
+              {% else %}
+                {% set _cov = c.stockpile_covered or 'No' %}
+                <select name="coverage_{{ c.vn_row }}"
+                        class="form-select form-select-sm">
+                  <option value="No"  {% if _cov != 'Yes' %}selected{% endif %}>Geen</option>
+                  <option value="Yes" {% if _cov == 'Yes' %}selected{% endif %}>Ja</option>
+                </select>
+              {% endif %}
+            </td>
+            <td class="small text-muted">
+              {{ c.origin or '—' }} · {{ c.mode_vn or '—' }}
+              {% if c.distance_km is not none %}
+                · {{ c.distance_km|round(0) }} km ({{ c.distance_method }})
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <datalist id="mode-options">
+      <option value="vrachtwagen">
+      <option value="schip">
+      <option value="binnenvaart">
+      <option value="zeeschip">
+      <option value="trein">
+    </datalist>
+
+    <button type="submit" class="btn btn-primary btn-sm">
+      <i class="fa fa-save"></i> Toepassen & opnieuw mappen
+    </button>
+  </form>
+</details>

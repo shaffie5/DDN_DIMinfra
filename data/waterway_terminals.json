@@ -1,0 +1,4 @@
+{
+  "_comment": "Manual quay/terminal coordinates [lat, lon] used for inland-waterway routing. Lookup is case-insensitive on the free-form 'Herkomst' string. Add an entry ONLY when you have verified the actual loading-quay coordinates (e.g. from the operator). Nominatim resolves quarry names to the office address, which is rarely on a canal — without a real pin, the searoute fallback usually produces nonsense and will be rejected by the routed-vs-crow sanity check (ratio > 3×).",
+  "_format": "\"<herkomst string>\": [latitude, longitude]"
+}

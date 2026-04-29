@@ -1,0 +1,237 @@
+{# Reusable OpenStreetMap (Leaflet) preview map.
+   Caller must set:  map_data_url = url_for('vn_map_data')  (or software_vn_map_data) #}
+<h4 class="mt-4">Kaart (OpenStreetMap)</h4>
+<div id="origins-map" style="height: 480px; border:1px solid #ccc; border-radius:6px;"></div>
+
+<script>
+window.addEventListener('load', function () {
+(async function () {
+  if (typeof L === 'undefined') {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-danger m-2">Leaflet is niet geladen.</div>';
+    return;
+  }
+  const map = L.map('origins-map');
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(map);
+
+  const MODE_COLOR = { Truck: '#1976d2', Ship: '#0d6e3a', Barge: '#0d6e3a', Train: '#9c27b0' };
+
+  let resp;
+  try {
+    resp = await fetch({{ map_data_url|tojson }});
+  } catch (e) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Kaart kon niet geladen worden.</div>';
+    return;
+  }
+  if (!resp.ok) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Geen kaartgegevens beschikbaar.</div>';
+    return;
+  }
+  let data;
+  try {
+    data = await resp.json();
+  } catch (e) {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-warning m-2">Kaartgegevens onleesbaar.</div>';
+    return;
+  }
+  console.log('[origins-map] payload:', data);
+  console.log('[origins-map] origins count:', (data.origins || []).length,
+              'routes count:', (data.routes || []).length);
+  const bounds = [];
+
+  // Plant marker
+  if (data.plant && data.plant.lat != null && data.plant.lon != null) {
+    const m = L.marker([data.plant.lat, data.plant.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="background:#d32f2f;color:#fff;border-radius:50%;width:28px;height:28px;line-height:28px;text-align:center;font-weight:700;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.4);">P</div>',
+        iconSize: [28, 28], iconAnchor: [14, 14]
+      })
+    }).addTo(map);
+    m.bindPopup('<strong>Asfaltcentrale</strong><br>' + (data.plant.label || ''));
+    bounds.push([data.plant.lat, data.plant.lon]);
+  }
+
+  // Per-mode layer groups so the operator can toggle them on/off.
+  const layers = {
+    'Vrachtwagen (Truck)': L.layerGroup().addTo(map),
+    'Binnenvaart (Barge)': L.layerGroup().addTo(map),
+    'Schip (Ship)':        L.layerGroup().addTo(map),
+    'Trein (Train)':       L.layerGroup().addTo(map),
+  };
+  const LAYER_FOR = {
+    Truck: layers['Vrachtwagen (Truck)'],
+    Barge: layers['Binnenvaart (Barge)'],
+    Ship:  layers['Schip (Ship)'],
+    Train: layers['Trein (Train)'],
+  };
+
+  // Origin markers
+  (data.origins || []).forEach(o => {
+    const layer = LAYER_FOR[o.mode] || layers['Vrachtwagen (Truck)'];
+    const m = L.circleMarker([o.lat, o.lon], {
+      radius: 7, color: MODE_COLOR[o.mode] || '#555',
+      fillColor: MODE_COLOR[o.mode] || '#555', fillOpacity: 0.9, weight: 2
+    }).addTo(layer);
+    const dist = (o.distance_km != null) ? (Math.round(o.distance_km) + ' km') : '—';
+    m.bindPopup(
+      '<strong>' + o.name + '</strong><br>' +
+      'Categorie: ' + o.category + '<br>' +
+      'Herkomst: ' + o.origin + '<br>' +
+      'Modus: ' + o.mode + '<br>' +
+      'Afstand (VN): ' + dist
+    );
+    bounds.push([o.lat, o.lon]);
+  });
+
+  // Routes — solid for real routed geometry, dashed when we fell back
+  // to a great-circle straight line.
+  (data.routes || []).forEach(r => {
+    const isFeeder = (r.leg === 'pre_truck' || r.leg === 'post_truck');
+    const layer = LAYER_FOR[r.mode] || layers['Vrachtwagen (Truck)'];
+    // Feeder truck legs (quarry→quay, quay→plant) get a distinct
+    // orange colour so they pop on top of the wide blue barge ribbon.
+    const color = isFeeder ? '#ff6f00' : (MODE_COLOR[r.mode] || '#555');
+    const fallback = (r.source === 'straight');
+    if ((r.mode === 'Barge' || r.mode === 'Ship') && !isFeeder) {
+      L.polyline(r.coords, {
+        color: '#5db8ff', weight: 8, opacity: 0.35
+      }).addTo(layer);
+    }
+    const tooltip = r.name + ' (' + r.mode + ')'
+      + (r.routed_length_km ? ' — ' + Math.round(r.routed_length_km) + ' km'
+                              + ((r.mode === 'Barge' || r.mode === 'Ship') ? ' vaarweg' : ' weg')
+                            : '')
+      + (fallback ? ' — rechte lijn (geen route gevonden)' : '');
+    const line = L.polyline(r.coords, {
+      color: color,
+      weight: isFeeder ? 4 : 3,
+      opacity: 0.95,
+      dashArray: fallback ? '6,8' : (isFeeder ? '2,6' : null)
+    }).addTo(layer).bindTooltip(tooltip);
+
+    // Permanent on-map label for the main vaarweg leg, anchored at the
+    // mid-point of the routed polyline so the Vaarweg (km) value is
+    // visible without hovering.
+    if ((r.mode === 'Barge' || r.mode === 'Ship') && !isFeeder
+        && r.routed_length_km && r.coords && r.coords.length) {
+      const mid = r.coords[Math.floor(r.coords.length / 2)];
+      L.marker(mid, {
+        icon: L.divIcon({
+          className: '',
+          html: '<div style="background:rgba(13,110,58,.92);color:#fff;'
+              + 'padding:2px 6px;border-radius:4px;font:600 11px/1.2 sans-serif;'
+              + 'white-space:nowrap;box-shadow:0 1px 2px rgba(0,0,0,.4);">'
+              + '⛴ ' + Math.round(r.routed_length_km) + ' km vaarweg</div>',
+          iconSize: null, iconAnchor: [0, 0]
+        }),
+        interactive: false, keyboard: false
+      }).addTo(layer);
+    }
+    r.coords.forEach(p => bounds.push(p));
+  });
+
+  // Transhipment quays (loading + unloading docks for barge/ship legs).
+  (data.quays || []).forEach(q => {
+    const layer = layers['Binnenvaart (Barge)'];
+    const m = L.marker([q.lat, q.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="background:#ff6f00;color:#fff;border:2px solid #fff;'
+            + 'width:16px;height:16px;transform:rotate(45deg);'
+            + 'box-shadow:0 0 3px rgba(0,0,0,.5);"></div>',
+        iconSize: [16, 16], iconAnchor: [8, 8]
+      })
+    }).addTo(layer);
+    m.bindPopup('<strong>' + (q.kind === 'load' ? 'Laadkade' : 'Loskade')
+                + '</strong><br>' + (q.label || '')
+                + '<br><em>voor ' + q.for + '</em>');
+    bounds.push([q.lat, q.lon]);
+  });
+
+  if (bounds.length) {
+    map.fitBounds(bounds, { padding: [30, 30] });
+  } else {
+    map.setView([50.85, 4.35], 7); // fallback: Belgium
+  }
+
+  // Legend
+  const legend = L.control({ position: 'bottomright' });
+  legend.onAdd = function () {
+    const div = L.DomUtil.create('div');
+    div.style.background = 'rgba(255,255,255,.9)';
+    div.style.padding = '6px 10px';
+    div.style.font = '12px/1.4 sans-serif';
+    div.style.border = '1px solid #aaa';
+    div.style.borderRadius = '4px';
+    div.innerHTML =
+      '<div><span style="display:inline-block;width:12px;height:12px;background:#d32f2f;border-radius:50%;margin-right:6px;"></span>Asfaltcentrale</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#1976d2;margin-right:6px;vertical-align:middle;"></span>Vrachtwagen (OSRM-weg)</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#0d6e3a;margin-right:6px;vertical-align:middle;"></span>Binnenvaart / Schip (vaarweg)</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#ff6f00;margin-right:6px;vertical-align:middle;"></span>Truck van/naar kade (voor- / natransport)</div>' +
+      '<div><span style="display:inline-block;width:10px;height:10px;background:#ff6f00;transform:rotate(45deg);margin-right:8px;vertical-align:middle;"></span>Laad- / loskade</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#9c27b0;margin-right:6px;vertical-align:middle;"></span>Trein</div>' +
+      '<div style="margin-top:4px;border-top:1px solid #ddd;padding-top:4px;"><span style="display:inline-block;width:14px;border-top:2px dashed #555;margin-right:6px;vertical-align:middle;"></span>Rechte lijn (geen route)</div>';
+    return div;
+  };
+  legend.addTo(map);
+
+  L.control.layers(null, layers, { collapsed: false }).addTo(map);
+
+  // ── Logistics breakdown table (Barge/Ship only) ──
+  const logistics = data.logistics || [];
+  if (logistics.length) {
+    const host = document.getElementById('origins-map');
+    const wrap = document.createElement('div');
+    wrap.className = 'mt-3';
+    let html = '<h5>Binnenvaart-logistiek (geschat)</h5>'
+             + '<p class="text-muted small mb-2">Geschatte logistieke afstand op basis van OpenStreetMap (Overpass) kade-zoekopdracht binnen '
+             + (data.quay_radius_km || 20) + ' km. Vervang door werkelijke afstanden uit leverbonnen voor de definitieve EPD.</p>'
+             + '<div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light">'
+             + '<tr><th>Component</th><th>Modus</th>'
+             + '<th class="text-end">Voor-truck (km)</th>'
+             + '<th class="text-end">Vaarweg (km)</th>'
+             + '<th class="text-end">Na-truck (km)</th>'
+             + '<th class="text-end">Totaal (km)</th>'
+             + '<th class="text-end">tkm/t (truck)</th>'
+             + '<th class="text-end">tkm/t (vaarweg)</th>'
+             + '<th>Status</th></tr></thead><tbody>';
+    logistics.forEach(l => {
+      const fmt = v => (v == null ? '—' : v);
+      const truckTkm = ((l.pre_truck_tkm_per_t || 0) + (l.post_truck_tkm_per_t || 0));
+      const truckTkmStr = (l.pre_truck_tkm_per_t == null && l.post_truck_tkm_per_t == null)
+        ? '—' : truckTkm.toFixed(2);
+      const status = (l.warnings && l.warnings.length)
+        ? '<span class="badge bg-warning text-dark" title="' + l.warnings.join(' | ') + '">⚠ Handmatig vereist</span>'
+        : (l.verified
+            ? '<span class="badge bg-success">Geverifieerd</span>'
+            : '<span class="badge bg-secondary">Geschat</span>');
+      html += '<tr>'
+            + '<td>' + l.name + '</td>'
+            + '<td>' + l.mode + '</td>'
+            + '<td class="text-end">' + fmt(l.pre_truck_km) + '</td>'
+            + '<td class="text-end">' + fmt(l.barge_km) + '</td>'
+            + '<td class="text-end">' + fmt(l.post_truck_km) + '</td>'
+            + '<td class="text-end"><strong>' + fmt(l.total_km) + '</strong></td>'
+            + '<td class="text-end">' + truckTkmStr + '</td>'
+            + '<td class="text-end">' + fmt(l.barge_tkm_per_t) + '</td>'
+            + '<td>' + status + '</td>'
+            + '</tr>';
+      if (l.warnings && l.warnings.length) {
+        html += '<tr><td colspan="9" class="small text-warning bg-light">⚠ '
+              + l.warnings.join('<br>⚠ ') + '</td></tr>';
+      }
+    });
+    html += '</tbody></table></div>';
+    wrap.innerHTML = html;
+    host.parentNode.insertBefore(wrap, host.nextSibling);
+  }
+})();
+});
+</script>

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Mapping voorbeeld (Software VN){% endblock %}
+
+{% block content %}
+<h2 class="mb-3">Mapping naar GPP — Centrale {{ mapping.plant_id }} <small class="text-muted">(Software VN)</small></h2>
+<p class="text-muted">
+  Locatie centrale: <strong>{{ mapping.plant_location or "—" }}</strong>
+  {% if mapping.plant_lat and mapping.plant_lon %}
+    ({{ "%.4f"|format(mapping.plant_lat) }}, {{ "%.4f"|format(mapping.plant_lon) }})
+  {% else %}
+    <span class="text-warning">— locatie kon niet worden gegeocodeerd</span>
+  {% endif %}
+</p>
+
+{% if plant_dict.plant_energy or plant_dict.energy_source_primary_secondary or plant_dict.electric_share_equipment or plant_dict.wheel_loader_fuel %}
+<div class="alert alert-info">
+  <strong>Software VN extras:</strong>
+  <ul class="mb-0 small">
+    <li>Type primair asfaltcentrale: {{ plant_dict.plant_energy or "—" }}
+        {% if plant_dict.primary_energy_pct is not none %}
+          ({{ "%.0f"|format(plant_dict.primary_energy_pct * 100) }}%)
+        {% endif %}
+    </li>
+    <li>Type secundair asfaltcentrale: {{ plant_dict.energy_source_primary_secondary or "—" }}
+        {% if plant_dict.secondary_energy_pct is not none %}
+          ({{ "%.0f"|format(plant_dict.secondary_energy_pct * 100) }}%)
+        {% endif %}
+    </li>
+    <li>Elektrisch aandeel equipment: {{ plant_dict.electric_share_equipment or "—" }}</li>
+    <li>Wheel loader fuel source: {{ plant_dict.wheel_loader_fuel or "—" }}</li>
+  </ul>
+</div>
+{% endif %}
+
+{% if mapping.warnings %}
+<div class="alert alert-warning">
+  <strong>Let op:</strong>
+  <ul class="mb-0">
+    {% for w in mapping.warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<h4 class="mt-4">Algemene velden</h4>
+<table class="table table-sm">
+  <thead><tr><th>GPP-cel</th><th>Waarde</th></tr></thead>
+  <tbody>
+    {% for cell, val in mapping.general_cells.items() %}
+    <tr><td><code>{{ cell }}</code></td><td>{{ val }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h4 class="mt-4">Componenten ({{ mapping.components|length }})</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped align-middle">
+  <thead>
+    <tr>
+      <th>VN-rij</th><th>Naam</th><th>Categorie</th><th>GPP-rij</th><th>%</th>
+      <th>Herkomst</th><th>Modus (VN)</th><th>Modus (GPP)</th>
+      <th>Energie</th><th>Afstand (km)</th><th>Stockpile</th><th>Methode</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in mapping.components %}
+    <tr>
+      <td>{{ c.vn_row }}</td>
+      <td>{{ c.name }}</td>
+      <td><span class="badge bg-secondary">{{ c.category }}</span></td>
+      <td><code>B{{ c.gpp_row }}</code></td>
+      <td>{{ "%.2f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ c.origin or "—" }}</td>
+      <td>{{ c.mode_vn or "—" }}</td>
+      <td>{{ c.mode_gpp }}</td>
+      <td><small>{{ c.energy_gpp }}</small></td>
+      <td>
+        {% if c.distance_km is none %}—
+        {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
+        {% else %}{{ "%.1f"|format(c.distance_km) }}
+        {% endif %}
+      </td>
+      <td>
+        {% if c.category == 'binder' %}<small class="text-muted">n.v.t.</small>
+        {% elif c.stockpile_covered == 'Yes' %}<span class="badge bg-success">Ja</span>
+        {% else %}<span class="badge bg-secondary">Geen</span>{% endif %}
+      </td>
+      <td><small class="text-muted">{{ c.distance_method }}</small></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr class="table-secondary">
+      <th colspan="4" class="text-end">Totaal (gemapt)</th>
+      <th>{{ "%.4f"|format((mapping.total_pct_fraction or 0) * 100) }} %</th>
+      <th colspan="4"></th>
+      <th>{{ mapping.total_distance_km|round(0) if mapping.total_distance_km is not none else 0 }}</th>
+      <th></th>
+      <th></th>
+    </tr>
+    {% if mapping.vn_composition_total_pct is not none %}
+    <tr class="table-light">
+      <th colspan="4" class="text-end">Totaal volgens VN (cel D66)</th>
+      <th>{{ "%.4f"|format(mapping.vn_composition_total_pct) }} %</th>
+      <th colspan="7" class="small text-muted">excl. Rode Kleurstof, Trinidad, Uintah</th>
+    </tr>
+    {% endif %}
+  </tfoot>
+</table>
+</div>
+
+{% if mapping.excluded_components %}
+<div class="alert alert-secondary mt-3">
+  <strong>Tijdelijk uitgesloten (worden later opnieuw geactiveerd):</strong>
+  <ul class="mb-0 small">
+    {% for e in mapping.excluded_components %}
+      <li>VN-rij {{ e.vn_row }} — <code>{{ e.name }}</code> ({{ e.pct }} %, herkomst {{ e.origin or "—" }})</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% with edit_action = url_for('software_vn_preview_edit', plant_index=mapping.plant_index) %}
+  {% include '_origin_edit.html' %}
+{% endwith %}
+
+{% with map_data_url = url_for('software_vn_map_data') %}
+  {% include '_origins_map.html' %}
+{% endwith %}
+
+<form method="post" action="{{ url_for('software_vn_calculate') }}" class="mt-4">
+  {% set missing = mapping.needs_manual_distance or [] %}
+  {% if missing %}
+  <div class="alert alert-warning">
+    <strong>Ontbrekende afstand(en).</strong> Vul handmatig de afstand in voor:
+    <ul class="mb-0">
+      {% for m in missing %}
+      <li>VN-rij {{ m.vn_row }} — <code>{{ m.name }}</code> ({{ m.category }})</li>
+      {% endfor %}
+    </ul>
+    Zonder deze gegevens kan de GPP-berekening niet starten.
+  </div>
+  {% endif %}
+  <a href="{{ url_for('software_vn_select_plant') }}" class="btn btn-outline-secondary">
+    <i class="fa fa-arrow-left"></i> Andere centrale
+  </a>
+  <button type="submit" class="btn btn-success" {% if missing %}disabled{% endif %}>
+    <i class="fa fa-calculator"></i> Bereken in GPP-tool
+  </button>
+</form>
+{% endblock %}

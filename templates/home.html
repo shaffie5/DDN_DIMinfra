@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero-section">
+    <h1 class="hero-title">Digital Delivery Note</h1>
+    <p class="hero-subtitle">
+        Replace paper delivery notes with a fully digital workflow &mdash;
+        from release at the asphalt plant to site confirmation and multi-party signing.
+    </p>
+</div>
+
+<!-- Features -->
+<div class="feature-grid">
+    <div class="feature-card">
+        <h3>Real-time Tracking</h3>
+        <p>Departure and arrival times are recorded automatically</p>
+    </div>
+    <div class="feature-card">
+        <h3>Digital Signatures</h3>
+        <p>Client, Transporter, COPRO and Permit Holder sign online</p>
+    </div>
+    <div class="feature-card">
+        <h3>Automatic Excel Export</h3>
+        <p>Fully signed report is generated and emailed automatically</p>
+    </div>
+</div>
+
+<!-- Workflow -->
+<h2 style="font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:0.75rem;">How it works</h2>
+<div class="workflow-steps">
+    {% set steps = [
+        ("1", "Asphalt Plant", "Create and release the delivery note with product, route and compliance data"),
+        ("2", "Transport", "Truck departs — departure time and route are registered automatically"),
+        ("3", "Site Delivery", "Site supervisor receives the truck and confirms arrival time"),
+        ("4", "Signatures", "All parties sign digitally — Excel report is generated automatically"),
+        ("5", "GPP Tool", "Data flows into the GPP planning tool for environmental impact calculation"),
+    ] %}
+    {% for num, title, desc in steps %}
+    <div class="workflow-step">
+        <div class="workflow-step-num">{{ num }}</div>
+        <h3>{{ title }}</h3>
+        <p>{{ desc }}</p>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Actions -->
+<div class="home-actions">
+    <a href="{{ url_for('create_note_page') }}" class="btn btn-primary btn-lg">
+        New Delivery Note
+    </a>
+    <a href="{{ url_for('site_supervisor_page') }}" class="btn btn-ghost btn-lg">
+        Site Supervisor Mode
+    </a>
+    <a href="{{ url_for('vn_upload_page') }}" class="btn btn-ghost btn-lg">
+        Upload VN
+    </a>
+    <a href="{{ url_for('software_vn_upload_page') }}" class="btn btn-ghost btn-lg">
+        Upload Software VN
+    </a>
+</div>
+{% endblock %}

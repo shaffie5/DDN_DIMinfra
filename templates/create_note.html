@@ -1,0 +1,575 @@
+{% extends "base.html" %}
+{% block title %}New Delivery Note{% endblock %}
+
+{% block extra_head %}
+<style>
+    #routeMap { z-index: 1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Wizard Progress Bar -->
+<div class="wizard-progress mb-4">
+    <div class="wizard-steps">
+        <button type="button" class="wizard-step active" data-step="0">
+            <span class="wizard-step-num">1</span>
+            <span class="wizard-step-label">Project and Location</span>
+        </button>
+        <div class="wizard-line"></div>
+        <button type="button" class="wizard-step" data-step="1">
+            <span class="wizard-step-num">2</span>
+            <span class="wizard-step-label">Material and Mix</span>
+        </button>
+        <div class="wizard-line"></div>
+        <button type="button" class="wizard-step" data-step="2">
+            <span class="wizard-step-num">3</span>
+            <span class="wizard-step-label">Transport Details</span>
+        </button>
+        <div class="wizard-line"></div>
+        <button type="button" class="wizard-step" data-step="3">
+            <span class="wizard-step-num">4</span>
+            <span class="wizard-step-label">Confirmation</span>
+        </button>
+    </div>
+</div>
+
+<form id="createNoteForm" method="POST" action="{{ url_for('create_note_submit') }}" novalidate>
+    <!-- Hidden fields -->
+    <input type="hidden" name="plant_lat" id="plant_lat" value="50.85">
+    <input type="hidden" name="plant_lon" id="plant_lon" value="4.35">
+    <input type="hidden" name="site_lat" id="site_lat" value="50.85">
+    <input type="hidden" name="site_lon" id="site_lon" value="4.35">
+    <input type="hidden" name="plant_address" id="plant_address" value="">
+    <input type="hidden" name="site_address" id="site_address" value="">
+
+    <!-- ═══════════════════════════════════════════════════════
+         STEP 1 — Project and Location
+         ═══════════════════════════════════════════════════════ -->
+    <div class="wizard-panel" data-panel="0">
+        <div class="panel-header">
+            <h2 class="panel-title">Project and Location</h2>
+            <p class="panel-subtitle">Identify the delivery and set the route</p>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions mb-4">
+            <button type="button" class="btn btn-subtle" id="loadDemoBtn">
+                Load Sample Data
+            </button>
+            <button type="button" class="btn btn-subtle" id="ocrToggleBtn">
+                Scan Delivery Note
+            </button>
+        </div>
+
+        <!-- OCR Section (hidden by default) -->
+        <div class="panel-section" id="ocrSection" style="display:none;">
+            <h3 class="section-label">Scan Existing Document</h3>
+            <p class="section-help">Upload a photo or PDF of a paper delivery note to auto-fill fields</p>
+            <div class="field-row">
+                <div class="field-group" style="flex:2;">
+                    <input type="file" class="form-input" id="ocrFile"
+                           accept=".png,.jpg,.jpeg,.pdf,.tiff,.bmp">
+                </div>
+                <div class="field-group" style="flex:1;">
+                    <button type="button" class="btn btn-primary w-100" id="ocrScanBtn" disabled>
+                        Scan Document
+                    </button>
+                </div>
+            </div>
+            <div id="ocrPreview" class="mt-3" style="display:none;">
+                <img id="ocrPreviewImg" class="img-fluid rounded" style="max-height:180px;">
+            </div>
+            <div id="ocrResults" class="mt-3" style="display:none;">
+                <h3 class="section-label">Recognised Fields</h3>
+                <div id="ocrFieldList"></div>
+                <div class="btn-row mt-3">
+                    <button type="button" class="btn btn-primary" id="ocrApplyBtn">Apply Selected Fields</button>
+                    <button type="button" class="btn btn-ghost" id="ocrClearBtn">Discard</button>
+                </div>
+            </div>
+            <div id="ocrSpinner" class="text-center mt-3" style="display:none;">
+                <div class="spinner"></div>
+                <p class="field-help mt-2">Scanning and extracting data...</p>
+            </div>
+        </div>
+
+        <!-- Project Info -->
+        <div class="panel-section">
+            <h3 class="section-label">Project Information</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="date">Date</label>
+                    <input type="date" class="form-input" name="date" id="date"
+                           value="{{ '%04d-%02d-%02d' | format(now.year, now.month, now.day) if now else '' }}">
+                    <span class="field-help">Automatically set to today</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="delivery_note_no">
+                        Delivery Note Number <span class="required">*</span>
+                    </label>
+                    <input type="text" class="form-input" name="delivery_note_no" id="delivery_note_no"
+                           placeholder="e.g. DDN-2026-00142" required>
+                    <span class="field-help">Unique identifier for this delivery</span>
+                    <span class="field-error" id="dnnError">Please enter a delivery note number</span>
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="client_address">Client Address</label>
+                    <textarea class="form-input" name="client_address" id="client_address" rows="3"
+                              placeholder="Name and address of the client"></textarea>
+                    <span class="field-help">The ordering party for this delivery</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Locations -->
+        <div class="panel-section">
+            <h3 class="section-label">Locations</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label">Origin (Asphalt Plant)</label>
+                    <div class="input-with-action">
+                        <input type="text" class="form-input" id="originQuery"
+                               placeholder="Type plant name or address...">
+                        <button type="button" class="btn btn-primary" id="searchOriginBtn">Search</button>
+                    </div>
+                    <select class="form-input suggestion-list" id="originSuggestions" style="display:none;" size="3"></select>
+                    <div class="btn-row mt-2">
+                        <button type="button" class="btn btn-ghost btn-sm" id="gpsOriginBtn">Use Current Location</button>
+                    </div>
+                    <div class="location-display" id="originCard">
+                        <span class="text-muted">Not set — search or click on map</span>
+                    </div>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Destination (Construction Site)</label>
+                    <div class="input-with-action">
+                        <input type="text" class="form-input" id="destinationQuery"
+                               placeholder="Type site name or address...">
+                        <button type="button" class="btn btn-primary" id="searchDestBtn">Search</button>
+                    </div>
+                    <select class="form-input suggestion-list" id="destSuggestions" style="display:none;" size="3"></select>
+                    <div class="btn-row mt-2">
+                        <button type="button" class="btn btn-ghost btn-sm" id="gpsDestBtn">Use Current Location</button>
+                    </div>
+                    <div class="location-display" id="destCard">
+                        <span class="text-muted">Not set — search or click on map</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map -->
+            <div class="map-container">
+                <div class="map-mode-toggle">
+                    <label class="toggle-option">
+                        <input type="radio" name="pinMode" value="origin" checked>
+                        <span>Click places Origin</span>
+                    </label>
+                    <label class="toggle-option">
+                        <input type="radio" name="pinMode" value="destination">
+                        <span>Click places Destination</span>
+                    </label>
+                </div>
+                <div id="routeMap" style="height:360px;border-radius:8px;"></div>
+                <div class="map-legend">
+                    <span class="legend-item"><span class="legend-dot origin"></span> Origin</span>
+                    <span class="legend-item"><span class="legend-dot dest"></span> Destination</span>
+                    <span class="legend-item"><span class="legend-line-sample"></span> Route</span>
+                </div>
+            </div>
+
+            <div class="distance-result" id="distanceInfo">
+                <span id="distanceText">Select origin and destination to calculate distance</span>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <div></div>
+            <button type="button" class="btn btn-primary btn-lg" id="toStep2">
+                Continue to Material Details
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         STEP 2 — Material and Mix Details
+         ═══════════════════════════════════════════════════════ -->
+    <div class="wizard-panel" data-panel="1" style="display:none;">
+        <div class="panel-header">
+            <h2 class="panel-title">Material and Mix Details</h2>
+            <p class="panel-subtitle">Describe the product being delivered</p>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Product</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="product_mixture_type">Mixture Type</label>
+                    <input type="text" class="form-input" name="product_mixture_type" id="product_mixture_type"
+                           placeholder="e.g. AC 14 surf B50/70 (ABb-4C)">
+                    <span class="field-help">Asphalt mix designation per EN standards</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="application">Application</label>
+                    <input type="text" class="form-input" name="application" id="application"
+                           placeholder="e.g. Surface course — road rehabilitation">
+                    <span class="field-help">Intended use of the material</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Compliance and Certification</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="certificate">Certificate Number</label>
+                    <input type="text" class="form-input" name="certificate" id="certificate"
+                           placeholder="e.g. COPRO-C-2026/0487">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="declaration_of_performance">Declaration of Performance</label>
+                    <input type="text" class="form-input" name="declaration_of_performance" id="declaration_of_performance"
+                           placeholder="e.g. DoP-BE-2026-AC14-0042">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group" style="flex:0 0 50%;">
+                    <label class="field-label" for="technical_data_sheet">Technical Data Sheet</label>
+                    <input type="text" class="form-input" name="technical_data_sheet" id="technical_data_sheet"
+                           placeholder="e.g. TDS-AC14-SurfB5070-v3.2">
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Performance Properties</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="mechanical_resistance">Mechanical Resistance</label>
+                    <input type="text" class="form-input" name="mechanical_resistance" id="mechanical_resistance"
+                           placeholder="e.g. Class 3 (EN 12697-12)">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="fuel_resistance">Fuel Resistance</label>
+                    <input type="text" class="form-input" name="fuel_resistance" id="fuel_resistance"
+                           placeholder="e.g. Not required">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="deicing_resistance">De-icing Resistance</label>
+                    <input type="text" class="form-input" name="deicing_resistance" id="deicing_resistance"
+                           placeholder="e.g. Resistant (EN 12697-37)">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="bitumen_aggregate_affinity">Bitumen-Aggregate Affinity</label>
+                    <input type="text" class="form-input" name="bitumen_aggregate_affinity" id="bitumen_aggregate_affinity"
+                           placeholder="e.g. Satisfactory (EN 12697-11)">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group" style="flex:0 0 50%;">
+                    <label class="field-label" for="disposal">Disposal Classification</label>
+                    <input type="text" class="form-input" name="disposal" id="disposal"
+                           placeholder="e.g. Recyclable — category I">
+                </div>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <button type="button" class="btn btn-ghost btn-lg" id="backToStep1">Back</button>
+            <button type="button" class="btn btn-primary btn-lg" id="toStep3">Continue to Transport Details</button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         STEP 3 — Transport Details
+         ═══════════════════════════════════════════════════════ -->
+    <div class="wizard-panel" data-panel="2" style="display:none;">
+        <div class="panel-header">
+            <h2 class="panel-title">Transport Details</h2>
+            <p class="panel-subtitle">Carrier, vehicle, and weights</p>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Carrier</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="transport_company">Transport Company</label>
+                    <input type="text" class="form-input" name="transport_company" id="transport_company"
+                           placeholder="e.g. Van Hoeck Transport NV">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="license_plate">License Plate</label>
+                    <input type="text" class="form-input" name="license_plate" id="license_plate"
+                           placeholder="e.g. 1-ABC-234">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label">Transport Mode</label>
+                    <input type="text" class="form-input" value="Truck" disabled>
+                    <span class="field-help">Currently only truck transport is supported</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="energy_source">Energy Source</label>
+                    <select class="form-input" name="energy_source" id="energy_source">
+                        {% for es in energy_sources %}
+                        <option value="{{ es }}" {{ 'selected' if es == 'Diesel_Euro5' }}>{{ es }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="field-help">Fuel type for environmental impact calculation</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Weights</h3>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="bruto_kg">Gross Weight (kilograms)</label>
+                    <input type="number" class="form-input" name="bruto_kg" id="bruto_kg"
+                           min="0" step="1" value="0">
+                    <span class="field-help">Total weight including vehicle</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="tare_weight_empty_kg">Tare Weight (kilograms)</label>
+                    <input type="number" class="form-input" name="tare_weight_empty_kg" id="tare_weight_empty_kg"
+                           min="0" step="1" value="0">
+                    <span class="field-help">Empty vehicle weight</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="net_total_quantity_ton">Net Quantity (tonnes)</label>
+                    <input type="number" class="form-input" name="net_total_quantity_ton" id="net_total_quantity_ton"
+                           min="0" step="0.01" value="0">
+                    <span class="field-help" id="calcNet">Gross minus tare, converted to tonnes</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel-section">
+            <h3 class="section-label">Email Recipients</h3>
+            <p class="section-help">Parties that will receive the signed delivery note by email</p>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="email_client">Client</label>
+                    <input type="email" class="form-input" name="email_client" id="email_client"
+                           placeholder="client@example.be">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="email_transporter">Transporter</label>
+                    <input type="email" class="form-input" name="email_transporter" id="email_transporter"
+                           placeholder="transport@example.be">
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field-group">
+                    <label class="field-label" for="email_copro">COPRO Inspector</label>
+                    <input type="email" class="form-input" name="email_copro" id="email_copro"
+                           placeholder="copro@example.eu">
+                </div>
+                <div class="field-group">
+                    <label class="field-label" for="email_permit_holder">Permit Holder</label>
+                    <input type="email" class="form-input" name="email_permit_holder" id="email_permit_holder"
+                           placeholder="permit@example.be">
+                </div>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <button type="button" class="btn btn-ghost btn-lg" id="backToStep2">Back</button>
+            <button type="button" class="btn btn-primary btn-lg" id="toStep4">Review and Confirm</button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════
+         STEP 4 — Confirmation
+         ═══════════════════════════════════════════════════════ -->
+    <div class="wizard-panel" data-panel="3" style="display:none;">
+        <div class="panel-header">
+            <h2 class="panel-title">Review Delivery Note</h2>
+            <p class="panel-subtitle">Verify all details before releasing</p>
+        </div>
+
+        <div class="summary-card">
+            <div class="summary-section">
+                <h3 class="summary-heading">Project</h3>
+                <div class="summary-row"><span class="summary-label">Date</span><span class="summary-value" id="sumDate">—</span></div>
+                <div class="summary-row"><span class="summary-label">Delivery Note Number</span><span class="summary-value" id="sumDdn">—</span></div>
+                <div class="summary-row"><span class="summary-label">Client</span><span class="summary-value" id="sumClient">—</span></div>
+            </div>
+            <div class="summary-section">
+                <h3 class="summary-heading">Route</h3>
+                <div class="summary-row"><span class="summary-label">Origin (Plant)</span><span class="summary-value" id="sumOrigin">—</span></div>
+                <div class="summary-row"><span class="summary-label">Destination (Site)</span><span class="summary-value" id="sumDest">—</span></div>
+                <div class="summary-row"><span class="summary-label">Distance</span><span class="summary-value" id="sumDistance">—</span></div>
+            </div>
+            <div class="summary-section">
+                <h3 class="summary-heading">Material</h3>
+                <div class="summary-row"><span class="summary-label">Mixture Type</span><span class="summary-value" id="sumProduct">—</span></div>
+                <div class="summary-row"><span class="summary-label">Application</span><span class="summary-value" id="sumApplication">—</span></div>
+                <div class="summary-row"><span class="summary-label">Certificate</span><span class="summary-value" id="sumCert">—</span></div>
+            </div>
+            <div class="summary-section">
+                <h3 class="summary-heading">Transport</h3>
+                <div class="summary-row"><span class="summary-label">Company</span><span class="summary-value" id="sumCompany">—</span></div>
+                <div class="summary-row"><span class="summary-label">License Plate</span><span class="summary-value" id="sumPlate">—</span></div>
+                <div class="summary-row"><span class="summary-label">Energy Source</span><span class="summary-value" id="sumEnergy">—</span></div>
+                <div class="summary-row"><span class="summary-label">Net Quantity</span><span class="summary-value" id="sumNet">—</span></div>
+                <div class="summary-row"><span class="summary-label">Email Recipients</span><span class="summary-value" id="sumRecipients">0</span></div>
+            </div>
+        </div>
+
+        <div class="wizard-nav">
+            <button type="button" class="btn btn-ghost btn-lg" id="backToStep3">Back</button>
+            <button type="submit" class="btn btn-confirm btn-lg" id="submitBtn">Release Delivery Note</button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+
+    // ─── Wizard Navigation ───────────────────────────────
+    var currentStep = 0;
+    var panels = document.querySelectorAll('.wizard-panel');
+    var steps = document.querySelectorAll('.wizard-step');
+
+    function goToStep(n) {
+        if (n < 0 || n >= panels.length) return;
+        if (n > currentStep && currentStep === 0) {
+            var ddn = document.getElementById('delivery_note_no').value.trim();
+            if (!ddn) {
+                document.getElementById('dnnError').style.display = 'block';
+                document.getElementById('delivery_note_no').focus();
+                showToast('Please enter a delivery note number.', 'warning');
+                return;
+            }
+            document.getElementById('dnnError').style.display = 'none';
+        }
+        if (n === 3) updateSummary();
+        panels[currentStep].style.display = 'none';
+        panels[n].style.display = 'block';
+        steps.forEach(function(s, i) {
+            s.classList.remove('active', 'done');
+            if (i < n) s.classList.add('done');
+            else if (i === n) s.classList.add('active');
+        });
+        currentStep = n;
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    steps.forEach(function(s) {
+        s.addEventListener('click', function() {
+            var target = parseInt(this.dataset.step);
+            if (target <= currentStep) goToStep(target);
+        });
+    });
+
+    document.getElementById('toStep2').addEventListener('click', function() { goToStep(1); });
+    document.getElementById('toStep3').addEventListener('click', function() { goToStep(2); });
+    document.getElementById('toStep4').addEventListener('click', function() { goToStep(3); });
+    document.getElementById('backToStep1').addEventListener('click', function() { goToStep(0); });
+    document.getElementById('backToStep2').addEventListener('click', function() { goToStep(1); });
+    document.getElementById('backToStep3').addEventListener('click', function() { goToStep(2); });
+
+    // ─── Map ─────────────────────────────────────────────
+    initCreateNoteMap();
+
+    // ─── Demo / OCR ──────────────────────────────────────
+    document.getElementById('loadDemoBtn').addEventListener('click', loadDemoData);
+
+    document.getElementById('ocrToggleBtn').addEventListener('click', function() {
+        var sec = document.getElementById('ocrSection');
+        sec.style.display = sec.style.display === 'none' ? 'block' : 'none';
+    });
+
+    var ocrFile = document.getElementById('ocrFile');
+    var ocrScanBtn = document.getElementById('ocrScanBtn');
+    ocrFile.addEventListener('change', function() {
+        ocrScanBtn.disabled = !this.files.length;
+        var preview = document.getElementById('ocrPreview');
+        if (this.files[0] && this.files[0].type.startsWith('image/')) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('ocrPreviewImg').src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(this.files[0]);
+        } else { preview.style.display = 'none'; }
+    });
+    ocrScanBtn.addEventListener('click', runOcrScan);
+    document.getElementById('ocrApplyBtn')?.addEventListener('click', applyOcrFields);
+    document.getElementById('ocrClearBtn')?.addEventListener('click', clearOcrResults);
+
+    // ─── Location Search ─────────────────────────────────
+    document.getElementById('searchOriginBtn').addEventListener('click', function() { searchLocation('origin'); });
+    document.getElementById('searchDestBtn').addEventListener('click', function() { searchLocation('destination'); });
+    document.getElementById('originQuery').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); searchLocation('origin'); }
+    });
+    document.getElementById('destinationQuery').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') { e.preventDefault(); searchLocation('destination'); }
+    });
+    document.getElementById('gpsOriginBtn').addEventListener('click', function() { useGPS('origin'); });
+    document.getElementById('gpsDestBtn').addEventListener('click', function() { useGPS('destination'); });
+
+    document.getElementById('originSuggestions').addEventListener('change', function() {
+        var opt = this.options[this.selectedIndex];
+        if (opt) applyLocation('origin', parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lon), opt.textContent);
+    });
+    document.getElementById('destSuggestions').addEventListener('change', function() {
+        var opt = this.options[this.selectedIndex];
+        if (opt) applyLocation('destination', parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lon), opt.textContent);
+    });
+
+    // ─── Weights ─────────────────────────────────────────
+    document.getElementById('bruto_kg').addEventListener('input', updateNetCalc);
+    document.getElementById('tare_weight_empty_kg').addEventListener('input', updateNetCalc);
+
+    // ─── DDN error clear ─────────────────────────────────
+    document.getElementById('delivery_note_no').addEventListener('input', function() {
+        if (this.value.trim()) document.getElementById('dnnError').style.display = 'none';
+    });
+
+    // ─── Form Validation ─────────────────────────────────
+    document.getElementById('createNoteForm').addEventListener('submit', function(e) {
+        var ddn = document.getElementById('delivery_note_no').value.trim();
+        if (!ddn) {
+            e.preventDefault();
+            goToStep(0);
+            document.getElementById('dnnError').style.display = 'block';
+            showToast('Please enter a delivery note number.', 'warning');
+        }
+    });
+});
+
+function updateSummary() {
+    function val(id) { var el = document.getElementById(id); return (el && el.value && el.value.trim()) || '—'; }
+    document.getElementById('sumDate').textContent = val('date');
+    document.getElementById('sumDdn').textContent = val('delivery_note_no');
+    var ca = val('client_address');
+    document.getElementById('sumClient').textContent = ca !== '—' ? ca.substring(0, 80) : '—';
+    document.getElementById('sumOrigin').textContent = val('plant_address') || '—';
+    document.getElementById('sumDest').textContent = val('site_address') || '—';
+    document.getElementById('sumProduct').textContent = val('product_mixture_type');
+    document.getElementById('sumApplication').textContent = val('application');
+    document.getElementById('sumCert').textContent = val('certificate');
+    document.getElementById('sumCompany').textContent = val('transport_company');
+    document.getElementById('sumPlate').textContent = val('license_plate');
+    var esEl = document.getElementById('energy_source');
+    document.getElementById('sumEnergy').textContent = esEl ? esEl.options[esEl.selectedIndex].text : '—';
+    var net = parseFloat(document.getElementById('net_total_quantity_ton').value) || 0;
+    document.getElementById('sumNet').textContent = net > 0 ? net.toFixed(2) + ' tonnes' : '—';
+    var count = 0;
+    ['email_client','email_transporter','email_copro','email_permit_holder'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && el.value.trim()) count++;
+    });
+    document.getElementById('sumRecipients').textContent = count + ' recipient' + (count !== 1 ? 's' : '');
+}
+</script>
+{% endblock %}

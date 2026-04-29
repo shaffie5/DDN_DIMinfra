@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Note Released{% endblock %}
+
+{% block content %}
+<div class="wizard-panel">
+
+    <!-- Success Header -->
+    <div class="panel-header">
+        <h2 class="panel-title">Delivery Note Released</h2>
+        <p class="section-help">Departure time recorded: {{ payload.departure_time }}</p>
+    </div>
+
+    <!-- Summary -->
+    <div class="panel-section">
+        <div class="summary-card">
+            <div class="summary-section">
+                <div class="summary-row"><span>DDN</span><span>{{ delivery_note_no }}</span></div>
+                <div class="summary-row"><span>Product</span><span>{{ payload.product_mixture_type or '—' }}</span></div>
+                <div class="summary-row"><span>Distance</span><span>{{ "%.1f"|format(payload.distance_km) }} km</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Signing Links -->
+    <div class="panel-section">
+        <div class="section-label">Signing Links</div>
+        <p class="section-help">Share these links with each party to collect signatures</p>
+        {% for role, label in role_labels.items() %}
+        <div class="field-row">
+            <div class="field-group" style="flex:1;">
+                <label class="field-label">{{ label }}</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" class="form-input" readonly
+                           value="{{ url_for('sign_page', note=note_id, role=role, _external=True) }}"
+                           id="link_{{ role }}" style="flex:1;">
+                    <button type="button" class="btn-ghost" onclick="copyLink('link_{{ role }}')">Copy</button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Site Supervisor Info -->
+    <div class="panel-section">
+        <div class="status-info" style="padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);">
+            <strong>Site Supervisor:</strong> Open the app, select "Site Supervisor" mode,
+            and enter Delivery Note Number: <strong>{{ delivery_note_no }}</strong>
+        </div>
+    </div>
+
+    {% if not email_enabled %}
+    <div class="panel-section">
+        <div class="status-warning" style="padding:12px 16px;border-radius:var(--radius);">
+            Email not configured — share the links above manually (prototype mode)
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- GPP Tool Integration -->
+    <div class="panel-section">
+        <div class="section-label">GPP Tool Integration</div>
+        <p class="section-help">
+            Once the delivery note is signed by all parties, the data is
+            automatically pushed into the GPP Excel tool for project-level
+            tracking, quantity reconciliation and progress reporting.
+        </p>
+
+        <div class="field-row" style="gap:12px;">
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Excel Export</div>
+                <div class="section-help">Delivery data flows automatically into the GPP workbook</div>
+            </div>
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Quantity Tracking</div>
+                <div class="section-help">Delivered vs planned tonnes reconciled per work order</div>
+            </div>
+            <div style="flex:1;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);text-align:center;">
+                <div style="font-weight:600;margin-bottom:4px;">Project Planning</div>
+                <div class="section-help">Delivery milestones sync with overall project schedule</div>
+            </div>
+        </div>
+
+        <details style="margin-top:16px;">
+            <summary style="cursor:pointer;font-weight:500;color:var(--text-secondary);padding:8px 0;">
+                GPP Connection Settings (coming soon)
+            </summary>
+            <div style="padding:16px 0;">
+                <div class="field-group" style="margin-bottom:12px;">
+                    <label class="field-label">GPP Excel File Path</label>
+                    <input type="text" class="form-input" disabled placeholder="e.g. C:/Projects/GPP_workorder_2026.xlsx">
+                    <span class="field-help">Path to the GPP Excel workbook</span>
+                </div>
+                <div class="field-group" style="margin-bottom:12px;">
+                    <label class="field-label">Work Order / Project Code</label>
+                    <input type="text" class="form-input" disabled placeholder="e.g. WO-2026-0145">
+                    <span class="field-help">GPP work order reference to link deliveries</span>
+                </div>
+                <div class="field-group">
+                    <label class="field-label">Target Sheet</label>
+                    <select class="form-input" disabled>
+                        <option>Deliveries</option>
+                        <option>Quantities</option>
+                        <option>Planning</option>
+                    </select>
+                    <span class="field-help">Which sheet in the GPP workbook to populate</span>
+                </div>
+            </div>
+        </details>
+    </div>
+
+    <!-- Actions -->
+    <div class="panel-section" style="display:flex;gap:12px;justify-content:center;">
+        <a href="{{ url_for('create_note_page') }}" class="btn-primary">Create Another Note</a>
+        <a href="{{ url_for('home') }}" class="btn-ghost">Back to Home</a>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function copyLink(id) {
+    const el = document.getElementById(id);
+    el.select();
+    navigator.clipboard.writeText(el.value);
+    showToast('Link copied!', 'success');
+}
+</script>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Software VN → GPP{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="card-title mb-3">Upload Software VN</h2>
+        <p class="text-muted">
+          Upload het <strong>Software VN</strong> Excel-bestand
+          (sheet <code>Info voor GPP</code>). Dit is een aparte stroom
+          naast de gewone Verantwoordingsnota: de extra velden
+          <em>Energiebron (primair/secundair)</em>, <em>Elektrisch
+          aandeel equipment</em> en <em>Wheel loader fuel source</em>
+          worden mee uitgelezen.
+        </p>
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label class="form-label">Software VN Excel-bestand (.xlsx)</label>
+            <input type="file" name="svn_file" accept=".xlsx" class="form-control" required>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa fa-upload"></i> Inlezen
+          </button>
+        </form>
+
+        <hr>
+        <p class="small text-muted mb-0">
+          Gebruik de gewone <a href="{{ url_for('vn_upload_page') }}">Verantwoordingsnota-upload</a>
+          als u het klassieke VN-bestand wil verwerken.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

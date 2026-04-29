@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}GPP-resultaten{% endblock %}
+
+{% block content %}
+<h2 class="mb-3">GPP-resultaten — Centrale {{ mapping.plant_id }}</h2>
+
+{% if mapping.warnings %}
+<div class="alert alert-warning">
+  <strong>Let op:</strong>
+  <ul class="mb-0">
+    {% for w in mapping.warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{# Compute Climate change row total from impact_matrix (sum across
+   all displayed lifecycle stages for the 'Climate change' category). #}
+{% set cc_ns = namespace(total=0.0, has_value=false) %}
+{% for row in results.impact_matrix %}
+  {% if row.category and row.category|lower == 'climate change' %}
+    {% for key, val in row.items() if key != 'category' %}
+      {% if val is not none %}
+        {% set cc_ns.total = cc_ns.total + val %}
+        {% set cc_ns.has_value = true %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endfor %}
+
+<div class="row">
+  {% set _check_sum_zero = (results.check_sum is defined and results.check_sum is not none and ("%.4f"|format(results.check_sum)) == "0.0000") %}
+  {% set _check_pass = results.check_ok or _check_sum_zero %}
+  <div class="col-md-6">
+    <div class="card text-center shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="text-muted">Climate change — totaal</h6>
+        <h2 class="text-primary">
+          {{ "%.3e"|format(cc_ns.total) if cc_ns.has_value else "—" }}
+        </h2>
+        <small>kg CO₂-eq / ton (som over levenscyclus)</small>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card text-center shadow-sm mb-3">
+      <div class="card-body">
+        <h6 class="text-muted">Validatiecheck</h6>
+        <h2 class="{% if _check_pass %}text-success{% else %}text-danger{% endif %}">
+          {% if _check_sum_zero %}No Errors.{% elif results.check_ok %}OK{% else %}Errors{% endif %}
+        </h2>
+        {% if results.check_sum is defined and results.check_sum is not none %}
+          <small class="text-muted">som = {{ "%.4f"|format(results.check_sum) }}</small>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<h4 class="mt-4">Dashboard</h4>
+<dl class="row small">
+  {% for k, v in results.dashboard.items() %}
+  <dt class="col-md-3">{{ k }}</dt>
+  <dd class="col-md-9">{{ v }}</dd>
+  {% endfor %}
+</dl>
+
+{% if mapping.general_labelled %}
+<h4 class="mt-4">GPP-mapping &mdash; algemene gegevens</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr><th>GPP Input cel</th><th>Veld</th><th>Waarde</th></tr>
+  </thead>
+  <tbody>
+    {% for row in mapping.general_labelled %}
+    <tr>
+      <td><code>{{ row.cell }}</code></td>
+      <td>{{ row.label }}</td>
+      <td>{{ row.value }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if mapping.components %}
+<h4 class="mt-4">GPP-mapping &mdash; componenten</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr>
+      <th>GPP rij</th><th>Naam</th><th>Categorie</th>
+      <th>%</th><th>Oorsprong</th><th>Transport</th>
+      <th>Energie</th><th>Afstand (km)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in mapping.components %}
+    <tr>
+      <td><code>{{ c.gpp_row }}</code></td>
+      <td>{{ c.name }}</td>
+      <td><small class="text-muted">{{ c.category }}</small></td>
+      <td>{{ "%.2f"|format(c.pct_fraction * 100) }}</td>
+      <td>{{ c.origin or "—" }}</td>
+      <td>{{ c.mode_gpp }}</td>
+      <td>{{ c.energy_gpp }}</td>
+      <td>
+        {% if c.distance_km is none %}—
+        {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
+        {% else %}{{ "%.1f"|format(c.distance_km) }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+<h4 class="mt-4">Environmental Impacts per ton</h4>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead>
+    <tr>
+      <th>Impactcategorie</th>
+      {% if results.impact_matrix and results.impact_matrix[0] %}
+        {% for key in results.impact_matrix[0].keys() if key != "category" %}
+          <th><small>{{ key }}</small></th>
+        {% endfor %}
+      {% endif %}
+      <th class="table-secondary"><small><strong>Totaal<br><span class="text-muted fw-normal">(A1+C3'+A2+C2'+A3+C1+D)</span></strong></small></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in results.impact_matrix %}
+    {% set ns = namespace(total=0.0, has_value=false) %}
+    {% for key, val in row.items() if key != "category" %}
+      {% if val is not none %}
+        {% set ns.total = ns.total + val %}
+        {% set ns.has_value = true %}
+      {% endif %}
+    {% endfor %}
+    <tr>
+      <td><strong>{{ row.category }}</strong></td>
+      {% for key, val in row.items() if key != "category" %}
+        <td>{{ "%.3e"|format(val) if val is not none else "—" }}</td>
+      {% endfor %}
+      <td class="table-secondary">
+        <strong>{{ "%.3e"|format(ns.total) if ns.has_value else "—" }}</strong>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary mt-3">
+  <i class="fa fa-arrow-left"></i> Andere centrale
+</a>
+<a href="{{ url_for('vn_upload_page') }}" class="btn btn-outline-secondary mt-3">
+  <i class="fa fa-upload"></i> Nieuw bestand
+</a>
+{% if gpp_filename %}
+<a href="{{ url_for('gpp_download', filename=gpp_filename) }}" class="btn btn-success mt-3">
+  <i class="fa fa-download"></i> Download ingevuld GPP-bestand
+</a>
+{% endif %}
+
+{% with map_data_url = url_for('vn_map_data') %}
+  {% include '_origins_map.html' %}
+{% endwith %}
+{% endblock %}

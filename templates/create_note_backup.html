@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+{% block title %}Nieuwe Leveringsbon{% endblock %}
+
+{% block content %}
+<!-- Stepper -->
+<div class="d-flex align-items-center justify-content-center flex-wrap gap-2 mb-4">
+    {% set steps = [("📝", "Basisgegevens"), ("🗺️", "Route"), ("📦", "Product & Conformiteit"), ("🚀", "Vrijgave")] %}
+    {% for icon, label in steps %}
+    <div class="stepper-step" data-step="{{ loop.index0 }}">
+        <span>{{ icon }}</span> <span>{{ label }}</span>
+    </div>
+    {% if not loop.last %}
+    <div class="stepper-line"></div>
+    {% endif %}
+    {% endfor %}
+</div>
+
+<form id="createNoteForm" method="POST" action="{{ url_for('create_note_submit') }}">
+    <!-- Hidden fields for map coordinates -->
+    <input type="hidden" name="plant_lat" id="plant_lat" value="50.85">
+    <input type="hidden" name="plant_lon" id="plant_lon" value="4.35">
+    <input type="hidden" name="site_lat" id="site_lat" value="50.85">
+    <input type="hidden" name="site_lon" id="site_lon" value="4.35">
+    <input type="hidden" name="plant_address" id="plant_address" value="">
+    <input type="hidden" name="site_address" id="site_address" value="">
+
+    <!-- OCR Scan Section -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light" data-bs-toggle="collapse" data-bs-target="#ocrSection" role="button">
+            <i class="fas fa-camera me-2"></i>
+            <strong>Scan leveringsbon — automatisch invullen via OCR</strong>
+        </div>
+        <div class="collapse" id="ocrSection">
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-camera fa-lg me-2"></i>
+                    <strong>Automatisch velden invullen via OCR</strong><br>
+                    <small>Upload een scan of PDF van een bestaande papieren leveringsbon.
+                    Herkende gegevens worden automatisch in het formulier geplaatst.</small>
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-9">
+                        <input type="file" class="form-control" id="ocrFile"
+                               accept=".png,.jpg,.jpeg,.pdf,.tiff,.bmp">
+                    </div>
+                    <div class="col-md-3">
+                        <button type="button" class="btn btn-primary w-100" id="ocrScanBtn" disabled>
+                            <i class="fas fa-search me-1"></i>Scannen
+                        </button>
+                    </div>
+                </div>
+                <div id="ocrPreview" class="mt-3" style="display:none;">
+                    <img id="ocrPreviewImg" class="img-fluid rounded" style="max-height:200px;">
+                </div>
+                <div id="ocrResults" class="mt-3" style="display:none;">
+                    <h6 class="fw-bold">📋 Herkende gegevens</h6>
+                    <div id="ocrFieldList"></div>
+                    <div class="mt-2 d-flex gap-2">
+                        <button type="button" class="btn btn-success" id="ocrApplyBtn">
+                            ✅ Geselecteerde velden overnemen
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="ocrClearBtn">
+                            ❌ Scan verwijderen
+                        </button>
+                    </div>
+                </div>
+                <div id="ocrSpinner" class="text-center mt-3" style="display:none;">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2">Leveringsbon scannen en gegevens extraheren…</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Demo Data Button -->
+    <div class="text-center mb-4">
+        <button type="button" class="btn btn-outline-secondary" id="loadDemoBtn">
+            📋 Digitale Leveringsbon inladen
+        </button>
+    </div>
+
+    <!-- Step 1: Basic Details -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">📝 Stap 1 — Basisgegevens</h5>
+            <small class="text-muted">Identificatie leveringsbon en transportinfo</small>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Datum</label>
+                    <input type="date" class="form-control" name="date"
+                           value="{{ '%04d-%02d-%02d' | format(now.year, now.month, now.day) if now else '' }}">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Leveringsbonnummer <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" name="delivery_note_no" id="delivery_note_no"
+                           placeholder="bijv. DDN-2026-00142" required>
+                    <div class="form-text text-warning" id="dnnWarning" style="display:none;">
+                        ⚠️ Verplicht — voer een uniek leveringsbonnummer in
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Transportbedrijf</label>
+                    <input type="text" class="form-control" name="transport_company" id="transport_company"
+                           placeholder="bijv. Van Hoeck Transport NV">
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label fw-semibold">Nummerplaat</label>
+                    <input type="text" class="form-control" name="license_plate" id="license_plate"
+                           placeholder="bijv. 1-ABC-234">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Route -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">🗺️ Stap 2 — Route</h5>
+            <small class="text-muted">Stel herkomst (centrale) en bestemming (werf) in</small>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <!-- Origin -->
+                <div class="col-md-6">
+                    <h6 class="fw-bold">📍 Herkomst — Asfaltcentrale</h6>
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="originQuery"
+                               placeholder="Typ adres of plaatsnaam van de centrale…">
+                        <button type="button" class="btn btn-outline-primary" id="searchOriginBtn">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <select class="form-select mb-2" id="originSuggestions" style="display:none;" size="3"></select>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="gpsOriginBtn">
+                        📡 Gebruik GPS
+                    </button>
+                    <div class="location-card mt-2" id="originCard">
+                        <small class="text-muted">Nog niet ingesteld</small>
+                    </div>
+                </div>
+                <!-- Destination -->
+                <div class="col-md-6">
+                    <h6 class="fw-bold">🏁 Bestemming — Werf</h6>
+                    <div class="input-group mb-2">
+                        <input type="text" class="form-control" id="destinationQuery"
+                               placeholder="Typ leveradres of werfnaam…">
+                        <button type="button" class="btn btn-outline-primary" id="searchDestBtn">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                    <select class="form-select mb-2" id="destSuggestions" style="display:none;" size="3"></select>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="gpsDestBtn">
+                        📡 Gebruik GPS
+                    </button>
+                    <div class="location-card mt-2" id="destCard">
+                        <small class="text-muted">Nog niet ingesteld</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Map -->
+            <div class="mb-3">
+                <div class="btn-group mb-2" role="group">
+                    <input type="radio" class="btn-check" name="pinMode" id="pinOrigin" value="origin" checked>
+                    <label class="btn btn-outline-primary btn-sm" for="pinOrigin">📍 Centrale (Herkomst)</label>
+                    <input type="radio" class="btn-check" name="pinMode" id="pinDest" value="destination">
+                    <label class="btn btn-outline-primary btn-sm" for="pinDest">🏁 Werf (Bestemming)</label>
+                </div>
+                <div id="routeMap" style="height:400px;border-radius:12px;border:1px solid #e2e8f0;"></div>
+                <div class="d-flex gap-4 mt-2 small text-muted">
+                    <span>🔵 <b>Herkomst</b> — Asfaltcentrale</span>
+                    <span>🔴 <b>Bestemming</b> — Leveringswerf</span>
+                    <span>── <b>Rijroute</b></span>
+                </div>
+            </div>
+
+            <!-- Transport & Distance -->
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Transporttype</label>
+                    <input type="text" class="form-control" value="Truck" disabled>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Energiebron</label>
+                    <select class="form-select" name="energy_source" id="energy_source">
+                        {% for es in energy_sources %}
+                        <option value="{{ es }}" {{ 'selected' if es == 'Diesel_Euro5' }}>{{ es }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Afstand</label>
+                    <div class="alert alert-success py-2 mb-0" id="distanceInfo">
+                        <span id="distanceText">Selecteer herkomst en bestemming</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Product, Compliance & Recipients -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">📦 Stap 3 — Product, Conformiteit & Ontvangers</h5>
+        </div>
+        <div class="card-body">
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabDelivery">🏗️ Levering</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabProduct">🧪 Product</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabWeights">⚖️ Gewichten</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabRecipients">📧 Ontvangers</button>
+                </li>
+            </ul>
+            <div class="tab-content">
+                <!-- Delivery Tab -->
+                <div class="tab-pane fade show active" id="tabDelivery">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Adres opdrachtgever</label>
+                        <textarea class="form-control" name="client_address" id="client_address" rows="3"
+                                  placeholder="Voer het adres van de opdrachtgever in…"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Bestemming (werf) adres</label>
+                        <input type="text" class="form-control" id="siteAddressDisplay" disabled>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Vertrektijd</label>
+                            <input type="text" class="form-control" value="Automatisch bij vrijgave" disabled>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Aankomsttijd</label>
+                            <input type="text" class="form-control" value="Automatisch bij ontvangst op werf" disabled>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Product Tab -->
+                <div class="tab-pane fade" id="tabProduct">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Product / Mengseltype</label>
+                            <input type="text" class="form-control" name="product_mixture_type" id="product_mixture_type"
+                                   placeholder="bijv. AC 14 surf B50/70">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Toepassing</label>
+                            <input type="text" class="form-control" name="application" id="application"
+                                   placeholder="bijv. Toplaag">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Certificaat</label>
+                            <input type="text" class="form-control" name="certificate" id="certificate">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Prestatieverklaring</label>
+                            <input type="text" class="form-control" name="declaration_of_performance" id="declaration_of_performance">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Technische Fiche</label>
+                            <input type="text" class="form-control" name="technical_data_sheet" id="technical_data_sheet">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Mechanische weerstand</label>
+                            <input type="text" class="form-control" name="mechanical_resistance" id="mechanical_resistance">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Brandstofbestendigheid</label>
+                            <input type="text" class="form-control" name="fuel_resistance" id="fuel_resistance">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Dooizoutbestendigheid</label>
+                            <input type="text" class="form-control" name="deicing_resistance" id="deicing_resistance">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Bitumen–aggregaat hechting</label>
+                            <input type="text" class="form-control" name="bitumen_aggregate_affinity" id="bitumen_aggregate_affinity">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Verwijdering</label>
+                            <input type="text" class="form-control" name="disposal" id="disposal">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Weights Tab -->
+                <div class="tab-pane fade" id="tabWeights">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Bruto (kg)</label>
+                            <input type="number" class="form-control" name="bruto_kg" id="bruto_kg"
+                                   min="0" step="1" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Tarra gewicht — leeg (kg)</label>
+                            <input type="number" class="form-control" name="tare_weight_empty_kg" id="tare_weight_empty_kg"
+                                   min="0" step="1" value="0">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Netto totaal (ton)</label>
+                            <input type="number" class="form-control" name="net_total_quantity_ton" id="net_total_quantity_ton"
+                                   min="0" step="0.01" value="0">
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <small class="text-muted" id="calcNet"></small>
+                    </div>
+                </div>
+
+                <!-- Recipients Tab -->
+                <div class="tab-pane fade" id="tabRecipients">
+                    <p class="text-muted small mb-3">E-mailadressen voor automatische verzending van ondertekende documenten</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">E-mail opdrachtgever</label>
+                            <input type="email" class="form-control" name="email_client" id="email_client"
+                                   placeholder="client@example.be">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">E-mail vervoerder</label>
+                            <input type="email" class="form-control" name="email_transporter" id="email_transporter"
+                                   placeholder="transport@example.be">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">E-mail COPRO</label>
+                            <input type="email" class="form-control" name="email_copro" id="email_copro"
+                                   placeholder="copro@example.eu">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">E-mail vergunninghouder</label>
+                            <input type="email" class="form-control" name="email_permit_holder" id="email_permit_holder"
+                                   placeholder="vergunning@voorbeeld.be">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Release Summary & Button -->
+    <div class="card shadow-sm mb-4 border-warning">
+        <div class="card-header bg-warning bg-opacity-10">
+            <h5 class="mb-0">🚀 Leveringsbon Vrijgeven</h5>
+            <small class="text-muted">Bekijk de samenvatting en geef vrij</small>
+        </div>
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-4 mb-3 small" id="releaseSummary">
+                <span><b>DDN:</b> <span id="sumDdn">—</span></span>
+                <span><b>Product:</b> <span id="sumProduct">—</span></span>
+                <span><b>Netto:</b> <span id="sumNet">—</span></span>
+                <span><b>Afstand:</b> <span id="sumDistance">—</span></span>
+                <span><b>Ontvangers:</b> <span id="sumRecipients">0</span></span>
+            </div>
+            <button type="submit" class="btn btn-primary btn-lg w-100">
+                🚀 Vrijgeven bij Asfaltcentrale & Verzenden
+            </button>
+        </div>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the map
+    initCreateNoteMap();
+
+    // Demo data loader
+    document.getElementById('loadDemoBtn').addEventListener('click', loadDemoData);
+
+    // OCR
+    const ocrFile = document.getElementById('ocrFile');
+    const ocrScanBtn = document.getElementById('ocrScanBtn');
+    ocrFile.addEventListener('change', function() {
+        ocrScanBtn.disabled = !this.files.length;
+        // Show preview for images
+        const preview = document.getElementById('ocrPreview');
+        if (this.files[0] && this.files[0].type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                document.getElementById('ocrPreviewImg').src = e.target.result;
+                preview.style.display = 'block';
+            };
+            reader.readAsDataURL(this.files[0]);
+        } else {
+            preview.style.display = 'none';
+        }
+    });
+    ocrScanBtn.addEventListener('click', runOcrScan);
+    document.getElementById('ocrApplyBtn')?.addEventListener('click', applyOcrFields);
+    document.getElementById('ocrClearBtn')?.addEventListener('click', clearOcrResults);
+
+    // Location search
+    document.getElementById('searchOriginBtn').addEventListener('click', () => searchLocation('origin'));
+    document.getElementById('searchDestBtn').addEventListener('click', () => searchLocation('destination'));
+    document.getElementById('originQuery').addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();searchLocation('origin');} });
+    document.getElementById('destinationQuery').addEventListener('keydown', e => { if(e.key==='Enter'){e.preventDefault();searchLocation('destination');} });
+
+    // GPS
+    document.getElementById('gpsOriginBtn').addEventListener('click', () => useGPS('origin'));
+    document.getElementById('gpsDestBtn').addEventListener('click', () => useGPS('destination'));
+
+    // Location selection
+    document.getElementById('originSuggestions').addEventListener('change', function() {
+        const opt = this.options[this.selectedIndex];
+        if (opt) applyLocation('origin', parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lon), opt.textContent);
+    });
+    document.getElementById('destSuggestions').addEventListener('change', function() {
+        const opt = this.options[this.selectedIndex];
+        if (opt) applyLocation('destination', parseFloat(opt.dataset.lat), parseFloat(opt.dataset.lon), opt.textContent);
+    });
+
+    // Weight auto-calc
+    document.getElementById('bruto_kg').addEventListener('input', updateNetCalc);
+    document.getElementById('tare_weight_empty_kg').addEventListener('input', updateNetCalc);
+
+    // Summary updates
+    ['delivery_note_no','product_mixture_type','net_total_quantity_ton',
+     'email_client','email_transporter','email_copro','email_permit_holder'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', updateSummary);
+    });
+
+    // Form validation
+    document.getElementById('createNoteForm').addEventListener('submit', function(e) {
+        const ddn = document.getElementById('delivery_note_no').value.trim();
+        if (!ddn) {
+            e.preventDefault();
+            document.getElementById('dnnWarning').style.display = 'block';
+            showToast('Leveringsbonnummer is verplicht.', 'warning');
+        }
+    });
+});
+</script>
+{% endblock %}
