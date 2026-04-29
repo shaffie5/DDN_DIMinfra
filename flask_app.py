@@ -1053,9 +1053,31 @@ def _apply_origin_overrides(components: list[dict[str, Any]],
 def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
     """Build a JSON-friendly OpenStreetMap payload for the preview map.
 
-    For every component with a known origin, geocode the origin and (for
-    Truck mode) fetch the OSRM road geometry from origin → plant.  All
-    coordinates are returned as ``[lat, lon]`` pairs ready for Leaflet.
+    For Truck/Train/etc. components we return a single polyline as before.
+
+    For Barge / Ship components we run the full inland-barge logistics
+    pipeline:
+
+      1. Geocode origin (quarry / source) and the asphalt plant.
+      2. Search OpenStreetMap (Overpass) for nearby loading and
+         unloading quays, using tags like ``waterway=dock``,
+         ``man_made=pier|quay``, ``industrial=port``,
+         ``landuse=port``, ``harbour=*``.
+      3. Pick the nearest feasible quay within ``QUAY_SEARCH_RADIUS_KM``
+         (default 20 km) of source / plant.  Manual overrides in
+         ``data/waterway_terminals.json`` win.
+      4. Compute road distance source → loading quay (OSRM).
+      5. Compute waterway distance loading → unloading quay (BRouter
+         or searoute, on a navigable network of canals/rivers/CEMT).
+      6. Compute road distance unloading quay → plant (OSRM).
+      7. Report all three plus tonne-km figures (using the recipe
+         fraction as the per-functional-unit mass proxy).
+      8. If any quay or waterway route is missing, attach a warning
+         and leave the original VN distance as the source-of-truth.
+
+    The resulting per-component records are returned in the
+    ``logistics`` array; the ``routes`` and ``quays`` arrays are
+    derived from them and drive the Leaflet rendering.
     """
     plant_lat = mapping_dict.get("plant_lat")
     plant_lon = mapping_dict.get("plant_lon")
@@ -1064,9 +1086,12 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
                      label=mapping_dict.get("plant_location") or "Plant")
         if plant_lat is not None and plant_lon is not None else None
     )
+    plant_label = mapping_dict.get("plant_location")
 
     origins: list[dict[str, Any]] = []
     routes: list[dict[str, Any]] = []
+    quays: list[dict[str, Any]] = []
+    logistics: list[dict[str, Any]] = []
     for c in mapping_dict.get("components", []):
         if not c.get("origin"):
             continue
@@ -1084,58 +1109,215 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
         })
         if not plant_pt:
             continue
-        coords: list[tuple[float, float]] | None = None
-        route_source = "straight"
-        route_length_km: float | None = None
+
         if c["mode_gpp"] == "Truck":
             coords = geo.osrm_route_geometry(origin_pt, plant_pt)
-            if coords:
-                route_source = "osrm"
+            routes.append({
+                "name":   c["name"],
+                "mode":   "Truck",
+                "coords": coords or [(origin_pt.lat, origin_pt.lon),
+                                     (plant_pt.lat, plant_pt.lon)],
+                "source": "osrm" if coords else "straight",
+                "routed_length_km": None,
+                "leg":    "main",
+            })
         elif c["mode_gpp"] in ("Barge", "Ship"):
-            # Allow the operator to pin a quay via data/waterway_terminals.json
-            origin_quay = geo.waterway_terminal_for(c["origin"]) or origin_pt
-            plant_quay = (
-                geo.waterway_terminal_for(mapping_dict.get("plant_location"))
-                or plant_pt
+            legs, leg_quays, log_rec = _waterway_logistics(
+                c, origin_pt, plant_pt, plant_label,
             )
-            wcoords, wlen, wsrc = geo.waterway_route_geometry(
-                origin_quay, plant_quay, mode=c["mode_gpp"],
-            )
-            if wcoords:
-                # Stitch the on-land hops (origin → quay, plant_quay → plant)
-                # so the polyline visually starts/ends at the real markers.
-                head = (
-                    [(origin_pt.lat, origin_pt.lon)]
-                    if origin_quay is not origin_pt else []
-                )
-                tail = (
-                    [(plant_pt.lat, plant_pt.lon)]
-                    if plant_quay is not plant_pt else []
-                )
-                coords = head + wcoords + tail
-                route_source = wsrc
-                route_length_km = wlen
-        if not coords:
-            # Straight-line fallback (Train, or any router failure)
-            coords = [(origin_pt.lat, origin_pt.lon), (plant_pt.lat, plant_pt.lon)]
-            route_source = "straight"
-        routes.append({
-            "name":   c["name"],
-            "mode":   c["mode_gpp"],
-            "coords": coords,
-            "source": route_source,
-            "routed_length_km": route_length_km,
-        })
+            routes.extend(legs)
+            quays.extend(leg_quays)
+            logistics.append(log_rec)
+        else:
+            # Train / No / unknown — straight line fallback.
+            routes.append({
+                "name":   c["name"],
+                "mode":   c["mode_gpp"],
+                "coords": [(origin_pt.lat, origin_pt.lon),
+                           (plant_pt.lat, plant_pt.lon)],
+                "source": "straight",
+                "routed_length_km": None,
+                "leg":    "main",
+            })
 
     return {
         "plant": {
             "lat":   plant_pt.lat if plant_pt else None,
             "lon":   plant_pt.lon if plant_pt else None,
-            "label": mapping_dict.get("plant_location") or "Plant",
+            "label": plant_label or "Plant",
         },
-        "origins": origins,
-        "routes":  routes,
+        "origins":   origins,
+        "routes":    routes,
+        "quays":     quays,
+        "logistics": logistics,
+        "quay_radius_km": geo.QUAY_SEARCH_RADIUS_KM,
     }
+
+
+# ── Inland-barge auto-split: source → quay → quay → plant ─────────────
+_QUAY_SPLIT_THRESHOLD_KM = 2.0  # below this we don't insert a truck hop
+
+
+def _waterway_logistics(
+    c: dict[str, Any],
+    origin_pt: "geo.GeoPoint",
+    plant_pt: "geo.GeoPoint",
+    plant_label: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Run the 10-step inland-barge logistics pipeline for one component.
+
+    Returns ``(routes, quays, logistics_record)``.  ``logistics_record``
+    contains the per-leg breakdown and any warnings; it never raises —
+    failures are surfaced as warnings on the record itself.
+    """
+    mode = c["mode_gpp"]
+    name = c["name"]
+    pct = float(c.get("pct_fraction") or 0.0)  # 0..1
+
+    log_rec: dict[str, Any] = {
+        "name": name, "mode": mode,
+        "vn_distance_km": c.get("distance_km"),
+        "pre_truck_km": None,
+        "barge_km": None,
+        "post_truck_km": None,
+        "total_km": None,
+        "pre_truck_tkm_per_t": None,   # tkm per tonne of asphalt produced
+        "barge_tkm_per_t": None,
+        "post_truck_tkm_per_t": None,
+        "verified": False,
+        "warnings": [],
+        "source": "estimated_logistics",
+    }
+
+    # 1) Resolve loading + unloading quays — manual override wins,
+    # otherwise Overpass nearest within QUAY_SEARCH_RADIUS_KM.
+    origin_quay = (geo.waterway_terminal_for(c.get("origin"))
+                   or geo.find_nearest_quay(origin_pt))
+    plant_quay = (geo.waterway_terminal_for(plant_label)
+                  or geo.find_nearest_quay(plant_pt))
+
+    if origin_quay is None:
+        log_rec["warnings"].append(
+            f"Geen laadkade gevonden binnen {geo.QUAY_SEARCH_RADIUS_KM:.0f} km "
+            f"van {c.get('origin') or 'herkomst'}; voer afstand handmatig in."
+        )
+    if plant_quay is None:
+        log_rec["warnings"].append(
+            f"Geen loskade gevonden binnen {geo.QUAY_SEARCH_RADIUS_KM:.0f} km "
+            f"van {plant_label or 'asfaltcentrale'}; voer afstand handmatig in."
+        )
+
+    routes: list[dict[str, Any]] = []
+    quays: list[dict[str, Any]] = []
+
+    # 2) Truck pre-leg: source → loading quay.
+    pre_km: float | None = None
+    if origin_quay is not None:
+        crow_pre = geo.haversine_km(origin_pt, origin_quay)
+        if crow_pre > _QUAY_SPLIT_THRESHOLD_KM:
+            pre_geom = geo.osrm_route_geometry(origin_pt, origin_quay)
+            pre_osrm = geo.osrm_route_km(origin_pt, origin_quay)
+            pre_km = pre_osrm[0] if pre_osrm else crow_pre
+            routes.append({
+                "name":   f"{name} (truck → quay)",
+                "mode":   "Truck",
+                "coords": pre_geom or [(origin_pt.lat, origin_pt.lon),
+                                       (origin_quay.lat, origin_quay.lon)],
+                "source": "osrm" if pre_geom else "straight",
+                "routed_length_km": round(pre_km, 1),
+                "leg":    "pre_truck",
+            })
+        else:
+            pre_km = 0.0
+        quays.append({
+            "lat": origin_quay.lat, "lon": origin_quay.lon,
+            "label": origin_quay.label or "Loading quay",
+            "kind": "load", "for": name,
+        })
+
+    # 3) Main barge / ship leg.
+    barge_km: float | None = None
+    if origin_quay is not None and plant_quay is not None:
+        wcoords, wlen, wsrc = geo.waterway_route_geometry(
+            origin_quay, plant_quay, mode=mode,
+        )
+        if wcoords:
+            barge_km = wlen
+            routes.append({
+                "name":   f"{name} ({mode.lower()})",
+                "mode":   mode,
+                "coords": wcoords,
+                "source": wsrc,
+                "routed_length_km": round(wlen, 1) if wlen else None,
+                "leg":    "main",
+            })
+        else:
+            log_rec["warnings"].append(
+                "Geen vaarroute gevonden tussen kades; voer afstand handmatig in."
+            )
+            routes.append({
+                "name":   f"{name} ({mode.lower()})",
+                "mode":   mode,
+                "coords": [(origin_quay.lat, origin_quay.lon),
+                           (plant_quay.lat, plant_quay.lon)],
+                "source": "straight",
+                "routed_length_km": None,
+                "leg":    "main",
+            })
+    else:
+        # No quay → cannot route; show straight line so the row stays visible.
+        routes.append({
+            "name":   f"{name} ({mode.lower()})",
+            "mode":   mode,
+            "coords": [(origin_pt.lat, origin_pt.lon),
+                       (plant_pt.lat, plant_pt.lon)],
+            "source": "straight",
+            "routed_length_km": None,
+            "leg":    "main",
+        })
+
+    # 4) Truck post-leg: unloading quay → plant.
+    post_km: float | None = None
+    if plant_quay is not None:
+        crow_post = geo.haversine_km(plant_quay, plant_pt)
+        if crow_post > _QUAY_SPLIT_THRESHOLD_KM:
+            post_geom = geo.osrm_route_geometry(plant_quay, plant_pt)
+            post_osrm = geo.osrm_route_km(plant_quay, plant_pt)
+            post_km = post_osrm[0] if post_osrm else crow_post
+            routes.append({
+                "name":   f"{name} (quay → plant)",
+                "mode":   "Truck",
+                "coords": post_geom or [(plant_quay.lat, plant_quay.lon),
+                                        (plant_pt.lat, plant_pt.lon)],
+                "source": "osrm" if post_geom else "straight",
+                "routed_length_km": round(post_km, 1),
+                "leg":    "post_truck",
+            })
+        else:
+            post_km = 0.0
+        quays.append({
+            "lat": plant_quay.lat, "lon": plant_quay.lon,
+            "label": plant_quay.label or "Unloading quay",
+            "kind": "unload", "for": name,
+        })
+
+    # 5) Fill the report record.
+    log_rec["pre_truck_km"] = round(pre_km, 1) if pre_km is not None else None
+    log_rec["barge_km"] = round(barge_km, 1) if barge_km is not None else None
+    log_rec["post_truck_km"] = round(post_km, 1) if post_km is not None else None
+    parts = [v for v in (pre_km, barge_km, post_km) if v is not None]
+    log_rec["total_km"] = round(sum(parts), 1) if parts else None
+    # tonne-km expressed per 1 tonne of asphalt produced; multiply by
+    # actual tonnage at EPD time.  ``pct_fraction`` is 0..1.
+    if pct > 0:
+        if pre_km is not None:
+            log_rec["pre_truck_tkm_per_t"] = round(pre_km * pct, 2)
+        if barge_km is not None:
+            log_rec["barge_tkm_per_t"] = round(barge_km * pct, 2)
+        if post_km is not None:
+            log_rec["post_truck_tkm_per_t"] = round(post_km * pct, 2)
+
+    return routes, quays, log_rec
 
 
 @app.route("/gpp/vn/map.json")

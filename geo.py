@@ -295,6 +295,118 @@ def waterway_terminal_for(label: str | None) -> "GeoPoint | None":
     return GeoPoint(lat=hit[0], lon=hit[1], label=f"{label} (waterway terminal)")
 
 
+# ─── Overpass-based quay finder ────────────────────────────────────────
+#
+# When no manual override is configured we ask Overpass for nearby
+# inland-waterway loading/unloading points and return the closest one
+# within the configured search radius.
+
+OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+OVERPASS_TIMEOUT_S = float(os.getenv("OVERPASS_TIMEOUT_S", "20.0"))
+QUAY_SEARCH_RADIUS_KM = float(os.getenv("QUAY_SEARCH_RADIUS_KM", "20.0"))
+_QUAY_CACHE_DIR = Path(__file__).resolve().parent / "data" / "waterway_cache" / "quays"
+
+
+def _quay_cache_path(lat: float, lon: float, radius_km: float) -> Path:
+    import hashlib
+    raw = f"{lat:.4f},{lon:.4f}|{radius_km:.1f}"
+    return _QUAY_CACHE_DIR / f"{hashlib.sha1(raw.encode()).hexdigest()}.json"
+
+
+def find_nearest_quay(
+    pt: "GeoPoint", radius_km: float | None = None,
+) -> "GeoPoint | None":
+    """Find the nearest inland-waterway loading/unloading quay to ``pt``.
+
+    Queries Overpass for OSM features tagged as quays / docks / piers /
+    ports / harbours within ``radius_km`` (default
+    ``QUAY_SEARCH_RADIUS_KM``, 20 km) and returns the closest one as a
+    :class:`GeoPoint`, or ``None`` if nothing is found.
+
+    Results are cached on disk per (lat, lon, radius) tuple so repeated
+    lookups for the same quarry/plant never re-query Overpass.
+    """
+    if not _is_valid_lat_lon(pt.lat, pt.lon):
+        return None
+    radius_km = radius_km if radius_km is not None else QUAY_SEARCH_RADIUS_KM
+    cache_path = _quay_cache_path(pt.lat, pt.lon, radius_km)
+    cached = _waterway_cache_load(cache_path)
+    if cached is not None:
+        if cached.get("quay") is None:
+            return None
+        q = cached["quay"]
+        return GeoPoint(lat=q["lat"], lon=q["lon"], label=q.get("label"))
+
+    radius_m = int(radius_km * 1000)
+    # We accept anything that strongly implies an inland transhipment
+    # point: explicit quay / dock / pier / port tags, plus generic
+    # mooring + harbour features.
+    query = f"""
+[out:json][timeout:{int(OVERPASS_TIMEOUT_S)}];
+(
+  node(around:{radius_m},{pt.lat},{pt.lon})["waterway"="dock"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["waterway"="dock"];
+  node(around:{radius_m},{pt.lat},{pt.lon})["man_made"="pier"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["man_made"="pier"];
+  node(around:{radius_m},{pt.lat},{pt.lon})["man_made"="quay"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["man_made"="quay"];
+  node(around:{radius_m},{pt.lat},{pt.lon})["industrial"="port"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["industrial"="port"];
+  node(around:{radius_m},{pt.lat},{pt.lon})["landuse"="port"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["landuse"="port"];
+  node(around:{radius_m},{pt.lat},{pt.lon})["harbour"];
+  way(around:{radius_m},{pt.lat},{pt.lon})["harbour"];
+);
+out center tags 50;
+""".strip()
+
+    candidates: list[dict[str, Any]] = []
+    try:
+        resp = requests.post(
+            OVERPASS_URL, data={"data": query}, timeout=OVERPASS_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        for el in data.get("elements", []):
+            if el.get("type") == "node":
+                lat, lon = el.get("lat"), el.get("lon")
+            else:  # way / relation: use the centroid
+                c = el.get("center") or {}
+                lat, lon = c.get("lat"), c.get("lon")
+            if lat is None or lon is None:
+                continue
+            tags = el.get("tags", {}) or {}
+            name = (tags.get("name") or tags.get("ref")
+                    or tags.get("waterway") or tags.get("man_made")
+                    or tags.get("industrial") or tags.get("harbour")
+                    or "quay")
+            candidates.append({
+                "lat": float(lat), "lon": float(lon),
+                "name": str(name),
+                "dist_km": haversine_km(
+                    pt, GeoPoint(lat=float(lat), lon=float(lon)),
+                ),
+            })
+    except Exception as e:
+        log.warning("Overpass quay query failed near (%.4f,%.4f): %s",
+                    pt.lat, pt.lon, e)
+        # Don't cache transient network failures.
+        return None
+
+    if not candidates:
+        _waterway_cache_save(cache_path, {"quay": None})
+        return None
+
+    candidates.sort(key=lambda x: x["dist_km"])
+    best = candidates[0]
+    _waterway_cache_save(cache_path, {"quay": {
+        "lat": best["lat"], "lon": best["lon"],
+        "label": f"{best['name']} (~{best['dist_km']:.1f} km)",
+    }})
+    return GeoPoint(lat=best["lat"], lon=best["lon"],
+                    label=f"{best['name']} (~{best['dist_km']:.1f} km)")
+
+
 def _waterway_cache_key(a: "GeoPoint", b: "GeoPoint", mode: str) -> Path:
     import hashlib
     raw = f"{mode}|{a.lat:.5f},{a.lon:.5f}|{b.lat:.5f},{b.lon:.5f}"
@@ -313,7 +425,7 @@ def _waterway_cache_load(path: Path):
 
 def _waterway_cache_save(path: Path, payload: dict) -> None:
     try:
-        _WATERWAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload), encoding="utf-8")
     except OSError as e:
         log.warning("waterway cache write failed: %s", e)
