@@ -1056,6 +1056,20 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
     For every component with a known origin, geocode the origin and (for
     Truck mode) fetch the OSRM road geometry from origin → plant.  All
     coordinates are returned as ``[lat, lon]`` pairs ready for Leaflet.
+
+    For Barge / Ship components the single origin → plant leg is
+    automatically split into up to three legs:
+
+      1. Truck pre-leg from the quarry to the loading quay (only if
+         the quarry is more than 2 km from a navigable waterway).
+      2. Barge / Ship leg from quay to quay.
+      3. Truck post-leg from the unloading quay to the asphalt plant
+         (only if the plant is more than 2 km from a navigable
+         waterway).
+
+    Quays are discovered in order: manual override
+    (``data/waterway_terminals.json``) → BRouter snap (first/last node
+    of the returned waterway route) → no split.
     """
     plant_lat = mapping_dict.get("plant_lat")
     plant_lon = mapping_dict.get("plant_lon")
@@ -1067,6 +1081,7 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
 
     origins: list[dict[str, Any]] = []
     routes: list[dict[str, Any]] = []
+    quays: list[dict[str, Any]] = []
     for c in mapping_dict.get("components", []):
         if not c.get("origin"):
             continue
@@ -1084,17 +1099,36 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
         })
         if not plant_pt:
             continue
-        coords: list[tuple[float, float]] | None = None
+
         if c["mode_gpp"] == "Truck":
             coords = geo.osrm_route_geometry(origin_pt, plant_pt)
-        if not coords:
-            # Straight-line fallback for Ship/Barge/Train or OSRM failure
-            coords = [(origin_pt.lat, origin_pt.lon), (plant_pt.lat, plant_pt.lon)]
-        routes.append({
-            "name":   c["name"],
-            "mode":   c["mode_gpp"],
-            "coords": coords,
-        })
+            routes.append({
+                "name":   c["name"],
+                "mode":   "Truck",
+                "coords": coords or [(origin_pt.lat, origin_pt.lon),
+                                     (plant_pt.lat, plant_pt.lon)],
+                "source": "osrm" if coords else "straight",
+                "routed_length_km": None,
+                "leg": "main",
+            })
+        elif c["mode_gpp"] in ("Barge", "Ship"):
+            legs, leg_quays = _waterway_legs(
+                c, origin_pt, plant_pt,
+                plant_label=mapping_dict.get("plant_location"),
+            )
+            routes.extend(legs)
+            quays.extend(leg_quays)
+        else:
+            # Train / No / unknown — straight line
+            routes.append({
+                "name":   c["name"],
+                "mode":   c["mode_gpp"],
+                "coords": [(origin_pt.lat, origin_pt.lon),
+                           (plant_pt.lat, plant_pt.lon)],
+                "source": "straight",
+                "routed_length_km": None,
+                "leg": "main",
+            })
 
     return {
         "plant": {
@@ -1104,21 +1138,146 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
         },
         "origins": origins,
         "routes":  routes,
+        "quays":   quays,
     }
+
+
+# ── Auto-split helpers for Barge / Ship multi-modal legs ──────────────
+_QUAY_SPLIT_THRESHOLD_KM = 2.0  # below this we don't insert a truck hop
+
+
+def _waterway_legs(
+    c: dict[str, Any],
+    origin_pt: "geo.GeoPoint",
+    plant_pt: "geo.GeoPoint",
+    plant_label: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return ``(routes, quays)`` for a single Barge/Ship component.
+
+    ``routes`` is 1-3 polyline dicts (optional truck pre-leg, main
+    waterway leg, optional truck post-leg).  ``quays`` is a list of
+    transhipment-point markers (loading/unloading quays) for the map.
+    """
+    mode = c["mode_gpp"]
+    name = c["name"]
+
+    # 1) Resolve loading + unloading quays.
+    origin_quay = geo.waterway_terminal_for(c.get("origin"))
+    plant_quay = geo.waterway_terminal_for(plant_label)
+
+    # 2) If either quay is missing, try to snap via the waterway router
+    #    (BRouter returns the nearest navigable node as its first/last
+    #    coord; searoute does the same on its maritime graph).
+    snap_origin = origin_quay or origin_pt
+    snap_plant = plant_quay or plant_pt
+    wcoords, wlen, wsrc = geo.waterway_route_geometry(
+        snap_origin, snap_plant, mode=mode,
+    )
+    if wcoords:
+        if origin_quay is None:
+            origin_quay = geo.GeoPoint(
+                lat=wcoords[0][0], lon=wcoords[0][1],
+                label=f"Quay near {c.get('origin') or 'origin'}",
+            )
+        if plant_quay is None:
+            plant_quay = geo.GeoPoint(
+                lat=wcoords[-1][0], lon=wcoords[-1][1],
+                label=f"Quay near {plant_label or 'plant'}",
+            )
+
+    legs: list[dict[str, Any]] = []
+    quays: list[dict[str, Any]] = []
+
+    # 3) Truck pre-leg: quarry → loading quay.
+    if origin_quay is not None:
+        pre_km = geo.haversine_km(origin_pt, origin_quay)
+        if pre_km > _QUAY_SPLIT_THRESHOLD_KM:
+            pre_geom = geo.osrm_route_geometry(origin_pt, origin_quay)
+            pre_osrm = geo.osrm_route_km(origin_pt, origin_quay)
+            pre_len = pre_osrm[0] if pre_osrm else pre_km
+            legs.append({
+                "name":   f"{name} (truck → quay)",
+                "mode":   "Truck",
+                "coords": pre_geom or [(origin_pt.lat, origin_pt.lon),
+                                       (origin_quay.lat, origin_quay.lon)],
+                "source": "osrm" if pre_geom else "straight",
+                "routed_length_km": round(pre_len, 1),
+                "leg": "pre_truck",
+            })
+            quays.append({
+                "lat": origin_quay.lat, "lon": origin_quay.lon,
+                "label": origin_quay.label or "Loading quay",
+                "kind": "load", "for": name,
+            })
+
+    # 4) Main barge/ship leg.
+    if wcoords:
+        legs.append({
+            "name":   f"{name} ({mode.lower()})",
+            "mode":   mode,
+            "coords": wcoords,
+            "source": wsrc,
+            "routed_length_km": round(wlen, 1) if wlen else None,
+            "leg": "main",
+        })
+    else:
+        # Router failure — straight line between origin and plant so the
+        # row is still visible on the map.
+        legs.append({
+            "name":   f"{name} ({mode.lower()})",
+            "mode":   mode,
+            "coords": [(origin_pt.lat, origin_pt.lon),
+                       (plant_pt.lat, plant_pt.lon)],
+            "source": "straight",
+            "routed_length_km": None,
+            "leg": "main",
+        })
+
+    # 5) Truck post-leg: unloading quay → plant.
+    if plant_quay is not None:
+        post_km = geo.haversine_km(plant_quay, plant_pt)
+        if post_km > _QUAY_SPLIT_THRESHOLD_KM:
+            post_geom = geo.osrm_route_geometry(plant_quay, plant_pt)
+            post_osrm = geo.osrm_route_km(plant_quay, plant_pt)
+            post_len = post_osrm[0] if post_osrm else post_km
+            legs.append({
+                "name":   f"{name} (quay → plant)",
+                "mode":   "Truck",
+                "coords": post_geom or [(plant_quay.lat, plant_quay.lon),
+                                        (plant_pt.lat, plant_pt.lon)],
+                "source": "osrm" if post_geom else "straight",
+                "routed_length_km": round(post_len, 1),
+                "leg": "post_truck",
+            })
+            quays.append({
+                "lat": plant_quay.lat, "lon": plant_quay.lon,
+                "label": plant_quay.label or "Unloading quay",
+                "kind": "unload", "for": name,
+            })
+
+    return legs, quays
 
 
 @app.route("/gpp/vn/map.json")
 def vn_map_data():
     if not session_has("vn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    return jsonify(_build_map_payload(session_get("vn_mapping")))
+    payload = _build_map_payload(session_get("vn_mapping"))
+    log.info("vn_map_data: plant=%s origins=%d routes=%d",
+             payload.get("plant"), len(payload.get("origins") or []),
+             len(payload.get("routes") or []))
+    return jsonify(payload)
 
 
 @app.route("/gpp/software-vn/map.json")
 def software_vn_map_data():
     if not session_has("svn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    return jsonify(_build_map_payload(session_get("svn_mapping")))
+    payload = _build_map_payload(session_get("svn_mapping"))
+    log.info("software_vn_map_data: plant=%s origins=%d routes=%d",
+             payload.get("plant"), len(payload.get("origins") or []),
+             len(payload.get("routes") or []))
+    return jsonify(payload)
 
 
 @app.route("/gpp/software-vn", methods=["GET"])

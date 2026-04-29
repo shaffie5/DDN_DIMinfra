@@ -8,3 +8,4 @@ pytesseract>=0.3
 PyMuPDF>=1.23
 xlwings>=0.33
 plotly>=5.0
+searoute>=1.5

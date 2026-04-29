@@ -3,13 +3,14 @@
 <h4 class="mt-4">Kaart (OpenStreetMap)</h4>
 <div id="origins-map" style="height: 480px; border:1px solid #ccc; border-radius:6px;"></div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
 <script>
+window.addEventListener('load', function () {
 (async function () {
+  if (typeof L === 'undefined') {
+    document.getElementById('origins-map').innerHTML =
+      '<div class="alert alert-danger m-2">Leaflet is niet geladen.</div>';
+    return;
+  }
   const map = L.map('origins-map');
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -39,6 +40,9 @@
       '<div class="alert alert-warning m-2">Kaartgegevens onleesbaar.</div>';
     return;
   }
+  console.log('[origins-map] payload:', data);
+  console.log('[origins-map] origins count:', (data.origins || []).length,
+              'routes count:', (data.routes || []).length);
   const bounds = [];
 
   // Plant marker
@@ -54,31 +58,84 @@
     bounds.push([data.plant.lat, data.plant.lon]);
   }
 
+  // Per-mode layer groups so the operator can toggle them on/off.
+  const layers = {
+    'Vrachtwagen (Truck)': L.layerGroup().addTo(map),
+    'Binnenvaart (Barge)': L.layerGroup().addTo(map),
+    'Schip (Ship)':        L.layerGroup().addTo(map),
+    'Trein (Train)':       L.layerGroup().addTo(map),
+  };
+  const LAYER_FOR = {
+    Truck: layers['Vrachtwagen (Truck)'],
+    Barge: layers['Binnenvaart (Barge)'],
+    Ship:  layers['Schip (Ship)'],
+    Train: layers['Trein (Train)'],
+  };
+
   // Origin markers
   (data.origins || []).forEach(o => {
+    const layer = LAYER_FOR[o.mode] || layers['Vrachtwagen (Truck)'];
     const m = L.circleMarker([o.lat, o.lon], {
       radius: 7, color: MODE_COLOR[o.mode] || '#555',
       fillColor: MODE_COLOR[o.mode] || '#555', fillOpacity: 0.9, weight: 2
-    }).addTo(map);
+    }).addTo(layer);
     const dist = (o.distance_km != null) ? (Math.round(o.distance_km) + ' km') : '—';
     m.bindPopup(
       '<strong>' + o.name + '</strong><br>' +
       'Categorie: ' + o.category + '<br>' +
       'Herkomst: ' + o.origin + '<br>' +
       'Modus: ' + o.mode + '<br>' +
-      'Afstand: ' + dist
+      'Afstand (VN): ' + dist
     );
     bounds.push([o.lat, o.lon]);
   });
 
-  // Routes
+  // Routes — solid for real routed geometry, dashed when we fell back
+  // to a great-circle straight line.
   (data.routes || []).forEach(r => {
-    const color = MODE_COLOR[r.mode] || '#555';
-    const dashed = (r.mode !== 'Truck');
+    const isFeeder = (r.leg === 'pre_truck' || r.leg === 'post_truck');
+    const layer = LAYER_FOR[r.mode] || layers['Vrachtwagen (Truck)'];
+    // Feeder truck legs (quarry→quay, quay→plant) get a distinct
+    // orange colour so they pop on top of the wide blue barge ribbon.
+    const color = isFeeder ? '#ff6f00' : (MODE_COLOR[r.mode] || '#555');
+    const fallback = (r.source === 'straight');
+    // For the main barge/ship leg: paint a wider semi-transparent
+    // ribbon under the line to make the canal/river visually obvious.
+    if ((r.mode === 'Barge' || r.mode === 'Ship') && !isFeeder) {
+      L.polyline(r.coords, {
+        color: '#5db8ff', weight: 8, opacity: 0.35
+      }).addTo(layer);
+    }
+    const tooltip = r.name + ' (' + r.mode + ')'
+      + (r.routed_length_km ? ' — ' + Math.round(r.routed_length_km) + ' km'
+                              + ((r.mode === 'Barge' || r.mode === 'Ship') ? ' vaarweg' : ' weg')
+                            : '')
+      + (fallback ? ' — rechte lijn (geen route gevonden)' : '');
     L.polyline(r.coords, {
-      color: color, weight: 3, opacity: 0.8,
-      dashArray: dashed ? '6,8' : null
-    }).addTo(map).bindTooltip(r.name + ' (' + r.mode + ')');
+      color: color,
+      weight: isFeeder ? 4 : 3,
+      opacity: 0.95,
+      dashArray: fallback ? '6,8' : (isFeeder ? '2,6' : null)
+    }).addTo(layer).bindTooltip(tooltip);
+    r.coords.forEach(p => bounds.push(p));
+  });
+
+  // Transhipment quays (loading + unloading docks for barge/ship legs).
+  (data.quays || []).forEach(q => {
+    const layer = layers['Binnenvaart (Barge)'];
+    const m = L.marker([q.lat, q.lon], {
+      icon: L.divIcon({
+        className: '',
+        html: '<div style="background:#ff6f00;color:#fff;border:2px solid #fff;'
+            + 'width:16px;height:16px;transform:rotate(45deg);'
+            + 'box-shadow:0 0 3px rgba(0,0,0,.5);"></div>',
+        iconSize: [16, 16], iconAnchor: [8, 8]
+      })
+    }).addTo(layer);
+    m.bindPopup('<strong>' + (q.kind === 'load' ? 'Laadkade' : 'Loskade')
+                + '</strong><br>' + (q.label || '')
+                + '<br><em>voor ' + q.for + '</em>');
+    bounds.push([q.lat, q.lon]);
   });
 
   if (bounds.length) {
@@ -98,11 +155,17 @@
     div.style.borderRadius = '4px';
     div.innerHTML =
       '<div><span style="display:inline-block;width:12px;height:12px;background:#d32f2f;border-radius:50%;margin-right:6px;"></span>Asfaltcentrale</div>' +
-      '<div><span style="display:inline-block;width:12px;height:3px;background:#1976d2;margin-right:6px;vertical-align:middle;"></span>Vrachtwagen (OSRM)</div>' +
-      '<div><span style="display:inline-block;width:12px;height:3px;background:#0d6e3a;border-top:2px dashed #0d6e3a;margin-right:6px;vertical-align:middle;"></span>Schip / Binnenvaart</div>' +
-      '<div><span style="display:inline-block;width:12px;height:3px;background:#9c27b0;border-top:2px dashed #9c27b0;margin-right:6px;vertical-align:middle;"></span>Trein</div>';
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#1976d2;margin-right:6px;vertical-align:middle;"></span>Vrachtwagen (OSRM-weg)</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#0d6e3a;margin-right:6px;vertical-align:middle;"></span>Binnenvaart / Schip (vaarweg)</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#ff6f00;margin-right:6px;vertical-align:middle;"></span>Truck van/naar kade (voor- / natransport)</div>' +
+      '<div><span style="display:inline-block;width:10px;height:10px;background:#ff6f00;transform:rotate(45deg);margin-right:8px;vertical-align:middle;"></span>Laad- / loskade</div>' +
+      '<div><span style="display:inline-block;width:12px;height:3px;background:#9c27b0;margin-right:6px;vertical-align:middle;"></span>Trein</div>' +
+      '<div style="margin-top:4px;border-top:1px solid #ddd;padding-top:4px;"><span style="display:inline-block;width:14px;border-top:2px dashed #555;margin-right:6px;vertical-align:middle;"></span>Rechte lijn (geen route)</div>';
     return div;
   };
   legend.addTo(map);
+
+  L.control.layers(null, layers, { collapsed: false }).addTo(map);
 })();
+});
 </script>

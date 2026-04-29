@@ -221,3 +221,210 @@ def osrm_route_geometry(
     except Exception as e:
         log.warning("OSRM geometry failed: %s", e)
         return None
+
+
+# ─────────────────────────────────────────────────────────────────────
+#  Inland-waterway / sea routing (Barge / Ship)
+# ─────────────────────────────────────────────────────────────────────
+
+# Disk cache: routed geometries never change for a given coordinate pair
+# + mode, and external routers (searoute, BRouter) are slow / rate-limited.
+_WATERWAY_CACHE_DIR = Path(__file__).resolve().parent / "data" / "waterway_cache"
+_WATERWAY_OVERRIDES_PATH = (
+    Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
+)
+_WATERWAY_OVERRIDES: dict[str, tuple[float, float]] | None = None
+
+# Optional self-hosted BRouter for inland waterways. When the env var
+# BROUTER_URL is set (e.g. http://127.0.0.1:17777) we try BRouter first
+# with the bundled barge.brf profile, then fall back to searoute.
+BROUTER_URL = os.getenv("BROUTER_URL", "").rstrip("/")
+BROUTER_PROFILE = os.getenv("BROUTER_PROFILE", "barge")
+BROUTER_TIMEOUT_S = float(os.getenv("BROUTER_TIMEOUT_S", "12.0"))
+
+try:
+    import searoute as _searoute  # type: ignore
+    _SEAROUTE_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dep
+    _searoute = None
+    _SEAROUTE_AVAILABLE = False
+
+
+def _load_waterway_overrides() -> dict[str, tuple[float, float]]:
+    """Lazy-load manual terminal overrides.
+
+    File format (``data/waterway_terminals.json``)::
+
+        {
+          "Genk": [50.9655, 5.5001],
+          "Soignies": [50.5792, 4.0686]
+        }
+
+    The lookup key is the free-form origin string after lower-casing and
+    trimming.  Use this to snap a quarry to its nearest navigable quay
+    when Nominatim returns the office address rather than the loading
+    point.
+    """
+    global _WATERWAY_OVERRIDES
+    if _WATERWAY_OVERRIDES is not None:
+        return _WATERWAY_OVERRIDES
+    out: dict[str, tuple[float, float]] = {}
+    if _WATERWAY_OVERRIDES_PATH.exists():
+        try:
+            raw = json.loads(_WATERWAY_OVERRIDES_PATH.read_text(encoding="utf-8"))
+            for k, v in raw.items():
+                if k.startswith("_"):
+                    continue
+                if isinstance(v, (list, tuple)) and len(v) == 2:
+                    out[k.strip().lower()] = (float(v[0]), float(v[1]))
+        except Exception as e:
+            log.warning("Failed to load waterway overrides %s: %s",
+                        _WATERWAY_OVERRIDES_PATH, e)
+    _WATERWAY_OVERRIDES = out
+    return out
+
+
+def waterway_terminal_for(label: str | None) -> "GeoPoint | None":
+    """Return the manual terminal/quay coordinate for ``label`` if defined."""
+    if not label:
+        return None
+    overrides = _load_waterway_overrides()
+    hit = overrides.get(label.strip().lower())
+    if hit is None:
+        return None
+    return GeoPoint(lat=hit[0], lon=hit[1], label=f"{label} (waterway terminal)")
+
+
+def _waterway_cache_key(a: "GeoPoint", b: "GeoPoint", mode: str) -> Path:
+    import hashlib
+    raw = f"{mode}|{a.lat:.5f},{a.lon:.5f}|{b.lat:.5f},{b.lon:.5f}"
+    h = hashlib.sha1(raw.encode()).hexdigest()
+    return _WATERWAY_CACHE_DIR / f"{h}.json"
+
+
+def _waterway_cache_load(path: Path):
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _waterway_cache_save(path: Path, payload: dict) -> None:
+    try:
+        _WATERWAY_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+    except OSError as e:
+        log.warning("waterway cache write failed: %s", e)
+
+
+def waterway_route_geometry(
+    a: "GeoPoint", b: "GeoPoint", mode: str = "Barge",
+) -> tuple[list[tuple[float, float]] | None, float | None, str]:
+    """Return ``(coords, length_km, source)`` for an inland-waterway leg.
+
+    ``coords`` is a list of ``(lat, lon)`` waypoints suitable for Leaflet,
+    or ``None`` on failure (caller should fall back to a straight line).
+    ``length_km`` is the routed great-distance in km when available.
+    ``source`` is one of ``"cache"``, ``"brouter"``, ``"searoute"``,
+    ``"none"``.
+
+    Routing hierarchy:
+
+      1. Disk cache (instant, offline).
+      2. Self-hosted BRouter on the bundled ``barge.brf`` waterway
+         profile, if ``BROUTER_URL`` is set.  This is the most
+         accurate option for Belgian / Dutch inland canals.
+      3. The public ``searoute`` package (offline, MIT-licensed) — a
+         maritime router with sparse inland coverage.  Results are
+         length-checked: anything more than 3× the great-circle
+         distance is rejected.
+      4. ``None`` → caller draws a dashed straight line.
+    """
+    if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
+        return None, None, "none"
+
+    cache_path = _waterway_cache_key(a, b, mode)
+    cached = _waterway_cache_load(cache_path)
+    if cached and cached.get("coords"):
+        return (
+            [tuple(c) for c in cached["coords"]],
+            cached.get("length_km"),
+            "cache",
+        )
+
+    crow_km = haversine_km(a, b)
+
+    # 2) BRouter (self-hosted, OSM waterway profile) — preferred.
+    if BROUTER_URL:
+        bcoords, blen = _brouter_route(a, b)
+        if bcoords and (not blen or crow_km == 0 or blen <= 3.0 * crow_km):
+            _waterway_cache_save(cache_path, {
+                "coords": bcoords, "length_km": blen, "mode": mode,
+                "source": "brouter",
+            })
+            return bcoords, blen, "brouter"
+
+    # 3) searoute fallback (maritime).
+    if _SEAROUTE_AVAILABLE:
+        try:
+            feat = _searoute.searoute([a.lon, a.lat], [b.lon, b.lat])
+            coords_lonlat = feat["geometry"]["coordinates"]
+            coords = [(float(c[1]), float(c[0])) for c in coords_lonlat]
+            length_km = float(feat["properties"].get("length") or 0.0) or None
+            if length_km and crow_km > 0 and length_km > 3.0 * crow_km:
+                log.info("searoute route rejected (routed=%.1fkm vs crow=%.1fkm,"
+                         " ratio %.1f×)", length_km, crow_km, length_km / crow_km)
+            else:
+                _waterway_cache_save(cache_path, {
+                    "coords": coords, "length_km": length_km, "mode": mode,
+                    "source": "searoute",
+                })
+                return coords, length_km, "searoute"
+        except Exception as e:
+            log.warning("searoute waterway route failed (%s → %s): %s", a, b, e)
+
+    return None, None, "none"
+
+
+def _brouter_route(
+    a: "GeoPoint", b: "GeoPoint",
+) -> tuple[list[tuple[float, float]] | None, float | None]:
+    """Query a self-hosted BRouter instance for a waterway route.
+
+    Returns ``(coords_lat_lon, length_km)`` or ``(None, None)`` on
+    failure.  Requires ``BROUTER_URL`` env var pointing at the BRouter
+    HTTP endpoint (default port 17777) and the ``barge`` profile to
+    be present in the BRouter profiles directory.
+    """
+    url = (
+        f"{BROUTER_URL}/brouter"
+        f"?lonlats={a.lon:.6f},{a.lat:.6f}|{b.lon:.6f},{b.lat:.6f}"
+        f"&profile={BROUTER_PROFILE}"
+        "&alternativeidx=0&format=geojson"
+    )
+    try:
+        resp = requests.get(url, timeout=BROUTER_TIMEOUT_S)
+        resp.raise_for_status()
+        data = resp.json()
+        feats = data.get("features") or []
+        if not feats:
+            return None, None
+        geom = feats[0].get("geometry") or {}
+        coords_lonlat = geom.get("coordinates") or []
+        if len(coords_lonlat) < 2:
+            return None, None
+        coords = [(float(c[1]), float(c[0])) for c in coords_lonlat]
+        props = feats[0].get("properties") or {}
+        length_km: float | None = None
+        try:
+            length_km = float(props.get("track-length") or 0.0) / 1000.0
+            if length_km <= 0:
+                length_km = None
+        except (TypeError, ValueError):
+            length_km = None
+        return coords, length_km
+    except Exception as e:
+        log.warning("BRouter waterway route failed (%s → %s): %s", a, b, e)
+        return None, None

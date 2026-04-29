@@ -1,0 +1,27 @@
+# Self-hosted BRouter for inland-waterway routing.
+#
+# Usage:
+#   1) Download segment files for your region (Belgium + NL):
+#        mkdir -p data/brouter/segments
+#        cd data/brouter/segments
+#        curl -O http://brouter.de/brouter/segments4/E0_N50.rd5
+#        curl -O http://brouter.de/brouter/segments4/E5_N50.rd5
+#        curl -O http://brouter.de/brouter/segments4/E0_N55.rd5
+#        curl -O http://brouter.de/brouter/segments4/E5_N55.rd5
+#   2) docker compose -f docker-compose.brouter.yml up -d
+#   3) export BROUTER_URL=http://127.0.0.1:17777
+#      python flask_app.py
+#
+# The barge.brf profile lives in data/brouter/profiles/ and is mounted
+# read-only inside the container.
+
+services:
+  brouter:
+    image: nrenner/brouter:latest
+    container_name: ddn-brouter
+    restart: unless-stopped
+    ports:
+      - "17777:17777"
+    volumes:
+      - ./data/brouter/segments:/segments4:ro
+      - ./data/brouter/profiles:/profiles2:ro
