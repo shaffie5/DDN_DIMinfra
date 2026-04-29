@@ -942,6 +942,10 @@ def vn_calculate():
         )
         return redirect(url_for("vn_preview",
                                 plant_index=session.get("vn_plant_index", 0)))
+    # Compute multimodal transport legs (truck-feeder + barge + truck-feeder)
+    # for Barge/Ship components so the GPP Input sheet receives Route 1/2/3
+    # instead of a single under-counted main leg.
+    _compute_component_legs(mapping_dict)
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
@@ -963,16 +967,9 @@ def vn_calculate():
         # Stockpile coverage (Input!G{r}); not applicable to binder row.
         if cat != "binder":
             cell_payload[f"G{r}"] = c.get("stockpile_covered") or "No"
-        cell_payload[f"J{r}"] = c["mode_gpp"]
-        cell_payload[f"K{r}"] = c["energy_gpp"]
-        cell_payload[f"L{r}"] = (
-            max(round(c["distance_km"], 2), 0.01)
-            if c.get("distance_km") is not None else 0
-        )
-        for col in ("M", "N", "P", "Q"):
-            cell_payload[f"{col}{r}"] = "No"
-        cell_payload[f"O{r}"] = 0
-        cell_payload[f"R{r}"] = 0
+        # Route 1/2/3 (J/K/L, M/N/O, P/Q/R) — multi-leg if available,
+        # single-leg legacy write otherwise.
+        _write_transport_routes(cell_payload, c)
 
     # Minimum DDN payload — VN is the source of truth; we only need a
     # transport-to-site stub so GPP's section 5 doesn't trip its check.
@@ -1320,6 +1317,125 @@ def _waterway_logistics(
     return routes, quays, log_rec
 
 
+# ── Multi-leg transport for the GPP "Input" sheet ─────────────────────
+#
+# The GPP template supports up to three transport routes per component
+# row: Route 1 in J/K/L (mode/energy/km), Route 2 in M/N/O, Route 3 in
+# P/Q/R.  Inland-barge / sea-going components are intrinsically
+# multi-modal — a barge leg almost always has a truck feeder before
+# the loading quay and after the unloading quay.  The single-distance
+# value coming out of vn_to_gpp models only the main waterway leg, so
+# without splitting we under-report the road-truck contribution to the
+# A2 transport impact.
+#
+# The helpers below reuse the same _waterway_logistics pipeline that
+# drives the preview map (so quay coordinates, manual overrides and
+# routed canal distances all match between map and GPP write).
+
+# Default GPP energy_source values for the auto-generated feeder legs.
+_FEEDER_TRUCK_ENERGY = "Diesel_Euro6"
+
+
+def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
+    """Mutate every Barge/Ship component in ``mapping_dict`` to attach a
+    ``transport_legs`` list of ``{mode, energy, distance_km}`` dicts.
+
+    Components with a manual distance override or missing geocoding are
+    left untouched (single-leg behaviour).  Costs nothing extra after
+    the user has already opened the preview map for the same plant —
+    the underlying waterway/quay queries are disk-cached.
+    """
+    plant_lat = mapping_dict.get("plant_lat")
+    plant_lon = mapping_dict.get("plant_lon")
+    if plant_lat is None or plant_lon is None or geo is None:
+        return
+    plant_pt = geo.GeoPoint(
+        lat=float(plant_lat), lon=float(plant_lon),
+        label=mapping_dict.get("plant_location") or "Plant",
+    )
+    plant_label = mapping_dict.get("plant_location")
+
+    for c in mapping_dict.get("components", []):
+        if c.get("mode_gpp") not in ("Barge", "Ship"):
+            continue
+        if c.get("manual_distance") and c.get("distance_km") is not None:
+            # Operator entered a single distance manually — respect it,
+            # don't second-guess by splitting.
+            continue
+        if not c.get("origin"):
+            continue
+        try:
+            origin_pt = geo.geocode(c["origin"])
+        except Exception:
+            origin_pt = None
+        if origin_pt is None:
+            continue
+        try:
+            _, _, log_rec = _waterway_logistics(
+                c, origin_pt, plant_pt, plant_label,
+            )
+        except Exception as e:
+            log.warning("transport-leg computation failed for %s: %s",
+                        c.get("name"), e)
+            continue
+
+        legs: list[dict[str, Any]] = []
+        pre_km = log_rec.get("pre_truck_km")
+        if pre_km is not None and pre_km > 0:
+            legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
+                         "distance_km": pre_km})
+        barge_km = log_rec.get("barge_km")
+        if barge_km is not None and barge_km > 0:
+            legs.append({"mode": c["mode_gpp"],
+                         "energy": c.get("energy_gpp") or "Diesel",
+                         "distance_km": barge_km})
+        post_km = log_rec.get("post_truck_km")
+        if post_km is not None and post_km > 0:
+            legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
+                         "distance_km": post_km})
+        if legs:
+            c["transport_legs"] = legs
+
+
+def _write_transport_routes(cell_payload: dict[str, Any], c: dict[str, Any]) -> None:
+    """Fill the GPP transport columns (J–R) for one component row.
+
+    If ``c["transport_legs"]`` is populated (e.g. truck → barge → truck
+    for a multimodal inland-barge component), Route 1/2/3 are filled
+    accordingly.  Otherwise we keep the legacy single-leg behaviour.
+    """
+    r = c["gpp_row"]
+    legs = c.get("transport_legs") or []
+
+    if not legs:
+        # Legacy single-route write.
+        cell_payload[f"J{r}"] = c["mode_gpp"]
+        cell_payload[f"K{r}"] = c["energy_gpp"]
+        cell_payload[f"L{r}"] = (
+            max(round(c["distance_km"], 2), 0.01)
+            if c.get("distance_km") is not None else 0
+        )
+        for col in ("M", "N", "P", "Q"):
+            cell_payload[f"{col}{r}"] = "No"
+        cell_payload[f"O{r}"] = 0
+        cell_payload[f"R{r}"] = 0
+        return
+
+    slots = (("J", "K", "L"), ("M", "N", "O"), ("P", "Q", "R"))
+    for i, (mode_col, energy_col, dist_col) in enumerate(slots):
+        if i < len(legs):
+            leg = legs[i]
+            cell_payload[f"{mode_col}{r}"] = leg["mode"]
+            cell_payload[f"{energy_col}{r}"] = leg["energy"]
+            cell_payload[f"{dist_col}{r}"] = max(
+                round(float(leg["distance_km"]), 2), 0.01,
+            )
+        else:
+            cell_payload[f"{mode_col}{r}"] = "No"
+            cell_payload[f"{energy_col}{r}"] = "No"
+            cell_payload[f"{dist_col}{r}"] = 0
+
+
 @app.route("/gpp/vn/map.json")
 def vn_map_data():
     if not session_has("vn_mapping"):
@@ -1521,6 +1637,7 @@ def software_vn_calculate():
         )
         return redirect(url_for("software_vn_preview",
                                 plant_index=session.get("svn_plant_index", 0)))
+    _compute_component_legs(mapping_dict)
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
@@ -1543,16 +1660,9 @@ def software_vn_calculate():
         # Stockpile coverage (Input!G{r}); not applicable to binder row.
         if cat != "binder":
             cell_payload[f"G{r}"] = c.get("stockpile_covered") or "No"
-        cell_payload[f"J{r}"] = c["mode_gpp"]
-        cell_payload[f"K{r}"] = c["energy_gpp"]
-        cell_payload[f"L{r}"] = (
-            max(round(c["distance_km"], 2), 0.01)
-            if c.get("distance_km") is not None else 0
-        )
-        for col in ("M", "N", "P", "Q"):
-            cell_payload[f"{col}{r}"] = "No"
-        cell_payload[f"O{r}"] = 0
-        cell_payload[f"R{r}"] = 0
+        # Route 1/2/3 (J/K/L, M/N/O, P/Q/R) — multi-leg if available,
+        # single-leg legacy write otherwise.
+        _write_transport_routes(cell_payload, c)
 
     payload = {
         "transport_mode": "Truck",

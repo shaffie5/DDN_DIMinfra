@@ -362,8 +362,17 @@ out center tags 50;
 
     candidates: list[dict[str, Any]] = []
     try:
+        # Overpass returns 406 if the User-Agent is the bare
+        # python-requests/* default (their abuse policy), so identify
+        # ourselves explicitly and ask for JSON.
         resp = requests.post(
-            OVERPASS_URL, data={"data": query}, timeout=OVERPASS_TIMEOUT_S,
+            OVERPASS_URL,
+            data={"data": query},
+            headers={
+                "User-Agent": "DDN-DIMinfra/1.0 (waterway-quay-finder)",
+                "Accept": "application/json",
+            },
+            timeout=OVERPASS_TIMEOUT_S,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -431,6 +440,178 @@ def _waterway_cache_save(path: Path, payload: dict) -> None:
         log.warning("waterway cache write failed: %s", e)
 
 
+# ─── Overpass-based inland waterway router ─────────────────────────────
+#
+# Builds a NetworkX graph from waterway=canal/river/fairway segments
+# returned by Overpass for the bounding box that covers both quays
+# (with a margin), then runs Dijkstra to get the actual canal route.
+# This is what makes Belgian inland routes (Albertkanaal, Maas, Schelde,
+# Canal Nimy-Blaton) follow the real water — without needing BRouter
+# or Docker.
+
+_OVERPASS_NETWORK_CACHE_DIR = (
+    Path(__file__).resolve().parent / "data" / "waterway_cache" / "networks"
+)
+_INLAND_BBOX_MARGIN_DEG = float(os.getenv("INLAND_BBOX_MARGIN_DEG", "0.20"))
+_INLAND_SNAP_MAX_KM = float(os.getenv("INLAND_SNAP_MAX_KM", "8.0"))
+
+
+def _bbox_cache_path(min_lat: float, min_lon: float,
+                     max_lat: float, max_lon: float) -> Path:
+    import hashlib
+    raw = f"{min_lat:.2f},{min_lon:.2f},{max_lat:.2f},{max_lon:.2f}"
+    return _OVERPASS_NETWORK_CACHE_DIR / f"{hashlib.sha1(raw.encode()).hexdigest()}.json"
+
+
+def _fetch_inland_waterways(min_lat: float, min_lon: float,
+                            max_lat: float, max_lon: float
+                            ) -> list[list[tuple[float, float]]] | None:
+    """Return a list of waterway polylines (lat,lon) inside the bbox.
+
+    Cached on disk per bbox.  ``None`` means the Overpass query failed
+    transiently (so the caller should not poison the cache).
+    """
+    cache = _bbox_cache_path(min_lat, min_lon, max_lat, max_lon)
+    if cache.exists():
+        try:
+            data = json.loads(cache.read_text(encoding="utf-8"))
+            return [[(float(p[0]), float(p[1])) for p in line]
+                    for line in data.get("lines", [])]
+        except Exception:
+            pass
+
+    query = f"""
+[out:json][timeout:{int(OVERPASS_TIMEOUT_S)}];
+(
+  way({min_lat},{min_lon},{max_lat},{max_lon})["waterway"="canal"];
+  way({min_lat},{min_lon},{max_lat},{max_lon})["waterway"="river"];
+  way({min_lat},{min_lon},{max_lat},{max_lon})["waterway"="fairway"];
+);
+out geom;
+""".strip()
+
+    try:
+        resp = requests.post(
+            OVERPASS_URL, data={"data": query},
+            headers={
+                "User-Agent": "DDN-DIMinfra/1.0 (waterway-router)",
+                "Accept": "application/json",
+            },
+            timeout=OVERPASS_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("Overpass waterway-network query failed for bbox "
+                    "(%.2f,%.2f,%.2f,%.2f): %s",
+                    min_lat, min_lon, max_lat, max_lon, e)
+        return None
+
+    lines: list[list[tuple[float, float]]] = []
+    for el in data.get("elements", []):
+        if el.get("type") != "way":
+            continue
+        geom = el.get("geometry") or []
+        if len(geom) < 2:
+            continue
+        lines.append([(float(g["lat"]), float(g["lon"])) for g in geom])
+
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"lines": lines}), encoding="utf-8")
+    except OSError as e:
+        log.warning("waterway-network cache write failed: %s", e)
+    return lines
+
+
+def _overpass_inland_route(
+    a: "GeoPoint", b: "GeoPoint",
+) -> tuple[list[tuple[float, float]] | None, float | None]:
+    """Build a NetworkX graph from local OSM waterways and shortest-path it.
+
+    Returns ``(coords, length_km)`` or ``(None, None)`` if Overpass
+    failed, NetworkX is unavailable, or no path exists between the
+    snapped endpoints.
+    """
+    try:
+        import networkx as nx
+    except ImportError:
+        return None, None
+
+    margin = _INLAND_BBOX_MARGIN_DEG
+    min_lat = min(a.lat, b.lat) - margin
+    max_lat = max(a.lat, b.lat) + margin
+    min_lon = min(a.lon, b.lon) - margin
+    max_lon = max(a.lon, b.lon) + margin
+
+    lines = _fetch_inland_waterways(min_lat, min_lon, max_lat, max_lon)
+    if not lines:
+        return None, None
+
+    # Quantise nodes to ~11 m so adjoining ways share endpoints in the
+    # graph (OSM ways don't always reuse the same node IDs at junctions
+    # when fetched with `out geom`).
+    def key(lat: float, lon: float) -> tuple[int, int]:
+        return (round(lat * 1e4), round(lon * 1e4))
+
+    nodes: dict[tuple[int, int], tuple[float, float]] = {}
+    g = nx.Graph()
+    for line in lines:
+        prev_k = None
+        for lat, lon in line:
+            k = key(lat, lon)
+            if k not in nodes:
+                nodes[k] = (lat, lon)
+            if prev_k is not None and prev_k != k:
+                d = haversine_km(
+                    GeoPoint(lat=nodes[prev_k][0], lon=nodes[prev_k][1]),
+                    GeoPoint(lat=lat, lon=lon),
+                )
+                if g.has_edge(prev_k, k):
+                    if d < g[prev_k][k]["weight"]:
+                        g[prev_k][k]["weight"] = d
+                else:
+                    g.add_edge(prev_k, k, weight=d)
+            prev_k = k
+
+    if g.number_of_nodes() == 0:
+        return None, None
+
+    def nearest_node(pt: "GeoPoint") -> tuple[tuple[int, int], float]:
+        best_k = None
+        best_d = float("inf")
+        for k, (lat, lon) in nodes.items():
+            d = haversine_km(pt, GeoPoint(lat=lat, lon=lon))
+            if d < best_d:
+                best_d, best_k = d, k
+        return best_k, best_d
+
+    src, src_d = nearest_node(a)
+    dst, dst_d = nearest_node(b)
+    if src is None or dst is None:
+        return None, None
+    if src_d > _INLAND_SNAP_MAX_KM or dst_d > _INLAND_SNAP_MAX_KM:
+        log.info("Overpass inland router: quay snap too far "
+                 "(src=%.1f km, dst=%.1f km > %.0f km)",
+                 src_d, dst_d, _INLAND_SNAP_MAX_KM)
+        return None, None
+
+    try:
+        path = nx.shortest_path(g, src, dst, weight="weight")
+    except nx.NetworkXNoPath:
+        log.info("Overpass inland router: no waterway path between snapped "
+                 "endpoints (graph has %d nodes / %d edges)",
+                 g.number_of_nodes(), g.number_of_edges())
+        return None, None
+    except Exception as e:
+        log.warning("Overpass inland router: pathfinding error: %s", e)
+        return None, None
+
+    coords = [nodes[k] for k in path]
+    length_km = sum(g[path[i]][path[i + 1]]["weight"] for i in range(len(path) - 1))
+    return coords, length_km
+
+
 def waterway_route_geometry(
     a: "GeoPoint", b: "GeoPoint", mode: str = "Barge",
 ) -> tuple[list[tuple[float, float]] | None, float | None, str]:
@@ -439,20 +620,24 @@ def waterway_route_geometry(
     ``coords`` is a list of ``(lat, lon)`` waypoints suitable for Leaflet,
     or ``None`` on failure (caller should fall back to a straight line).
     ``length_km`` is the routed great-distance in km when available.
-    ``source`` is one of ``"cache"``, ``"brouter"``, ``"searoute"``,
-    ``"none"``.
+    ``source`` is one of ``"cache"``, ``"brouter"``, ``"overpass"``,
+    ``"searoute"``, ``"none"``.
 
-    Routing hierarchy:
+    Routing hierarchy (mode-aware):
 
-      1. Disk cache (instant, offline).
-      2. Self-hosted BRouter on the bundled ``barge.brf`` waterway
-         profile, if ``BROUTER_URL`` is set.  This is the most
-         accurate option for Belgian / Dutch inland canals.
-      3. The public ``searoute`` package (offline, MIT-licensed) — a
-         maritime router with sparse inland coverage.  Results are
-         length-checked: anything more than 3× the great-circle
-         distance is rejected.
-      4. ``None`` → caller draws a dashed straight line.
+      * **Barge** (inland canals): cache → BRouter → Overpass-graph
+        (OSM ``waterway=canal|river|fairway`` + Dijkstra) → searoute
+        (low snap tolerance) → ``None``.
+      * **Ship** (coastal / transoceanic / sea-going): cache → searoute
+        (high snap tolerance for deep-water ports) → BRouter →
+        Overpass-graph → ``None``.
+
+    For Ship mode the snap tolerance defaults to
+    ``SEAROUTE_SHIP_MAX_SNAP_KM`` (60 km) since container / bulk
+    terminals are routinely 20–50 km up an estuary (Antwerp on the
+    Schelde, Hamburg on the Elbe, Rotterdam on the Nieuwe Maas, etc.)
+    and the global maritime network's nearest node is on the open
+    coast.
     """
     if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
         return None, None, "none"
@@ -467,9 +652,11 @@ def waterway_route_geometry(
         )
 
     crow_km = haversine_km(a, b)
+    is_ship = (mode or "").strip().lower() == "ship"
 
-    # 2) BRouter (self-hosted, OSM waterway profile) — preferred.
-    if BROUTER_URL:
+    def _try_brouter():
+        if not BROUTER_URL:
+            return None
         bcoords, blen = _brouter_route(a, b)
         if bcoords and (not blen or crow_km == 0 or blen <= 3.0 * crow_km):
             _waterway_cache_save(cache_path, {
@@ -477,25 +664,75 @@ def waterway_route_geometry(
                 "source": "brouter",
             })
             return bcoords, blen, "brouter"
+        return None
 
-    # 3) searoute fallback (maritime).
-    if _SEAROUTE_AVAILABLE:
+    def _try_inland():
+        ocoords, olen = _overpass_inland_route(a, b)
+        if ocoords and (not olen or crow_km == 0 or olen <= 4.0 * crow_km):
+            coords = [(a.lat, a.lon)] + ocoords + [(b.lat, b.lon)]
+            _waterway_cache_save(cache_path, {
+                "coords": coords, "length_km": olen, "mode": mode,
+                "source": "overpass",
+            })
+            return coords, olen, "overpass"
+        return None
+
+    def _try_searoute():
+        if not _SEAROUTE_AVAILABLE:
+            return None
         try:
             feat = _searoute.searoute([a.lon, a.lat], [b.lon, b.lat])
             coords_lonlat = feat["geometry"]["coordinates"]
             coords = [(float(c[1]), float(c[0])) for c in coords_lonlat]
             length_km = float(feat["properties"].get("length") or 0.0) or None
-            if length_km and crow_km > 0 and length_km > 3.0 * crow_km:
-                log.info("searoute route rejected (routed=%.1fkm vs crow=%.1fkm,"
-                         " ratio %.1f×)", length_km, crow_km, length_km / crow_km)
+            snap_a = haversine_km(a, GeoPoint(lat=coords[0][0], lon=coords[0][1])) if coords else None
+            snap_b = haversine_km(b, GeoPoint(lat=coords[-1][0], lon=coords[-1][1])) if coords else None
+            # Coastal/sea-going ships tolerate a much larger snap than
+            # inland barges — global maritime nodes are sparse and deep-
+            # water ports are commonly tens of km up an estuary.
+            if is_ship:
+                max_snap = float(os.getenv("SEAROUTE_SHIP_MAX_SNAP_KM", "60.0"))
+                max_ratio = 2.5  # transoceanic detours are real (Cape, Suez…)
             else:
-                _waterway_cache_save(cache_path, {
-                    "coords": coords, "length_km": length_km, "mode": mode,
-                    "source": "searoute",
-                })
-                return coords, length_km, "searoute"
+                max_snap = float(os.getenv("SEAROUTE_MAX_SNAP_KM", "10.0"))
+                max_ratio = 3.0
+            if (snap_a is not None and snap_a > max_snap) or \
+               (snap_b is not None and snap_b > max_snap):
+                log.info("searoute rejected (endpoint snap %.1f / %.1f km "
+                         "exceeds %.0f km for mode=%s)",
+                         snap_a or 0.0, snap_b or 0.0, max_snap, mode)
+                return None
+            if length_km and crow_km > 0 and length_km > max_ratio * crow_km:
+                log.info("searoute rejected (routed=%.1fkm vs crow=%.1fkm,"
+                         " ratio %.1f× exceeds %.1f× for mode=%s)",
+                         length_km, crow_km, length_km / crow_km, max_ratio, mode)
+                return None
+            # Splice exact quay coords so the polyline visibly touches
+            # the orange quay markers; the connector is a short straight
+            # segment to/from the maritime network entry point.
+            coords = [(a.lat, a.lon)] + coords + [(b.lat, b.lon)]
+            _waterway_cache_save(cache_path, {
+                "coords": coords, "length_km": length_km, "mode": mode,
+                "source": "searoute",
+            })
+            return coords, length_km, "searoute"
         except Exception as e:
             log.warning("searoute waterway route failed (%s → %s): %s", a, b, e)
+            return None
+
+    if is_ship:
+        # Maritime / transoceanic first, inland canal fallback for the
+        # rare port-to-port-via-canal case (e.g. Rhine-bound coasters).
+        order = (_try_searoute, _try_brouter, _try_inland)
+    else:
+        # Inland canals first (Barge / default), maritime as last resort
+        # for short-sea coastal hops the inland network can't model.
+        order = (_try_brouter, _try_inland, _try_searoute)
+
+    for step in order:
+        result = step()
+        if result is not None:
+            return result
 
     return None, None, "none"
 
