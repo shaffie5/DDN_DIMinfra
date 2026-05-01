@@ -40,3 +40,19 @@ data/software_vn_uploads/
 data/vn_uploads/
 data/waterway_cache/
 data/logos/
+
+# --- Runtime / regenerated artifacts (must not be committed) ---
+data/session_store/
+output/
+gpp_link/output/
+gpp_link/upload_log.txt
+instance/
+*.bak
+*~
+.DS_Store
+*_backup.*
+
+# --- Local Python environments ---
+.venv/
+venv/
+

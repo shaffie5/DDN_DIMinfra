@@ -1,3 +1,12 @@
+"""Outgoing-email helper used to send signing invitations and arrival
+notifications.
+
+Reads SMTP settings from environment variables (``DDN_SMTP_HOST``,
+``DDN_SMTP_PORT``, ``DDN_SMTP_USER``, ``DDN_SMTP_PASSWORD``,
+``DDN_SMTP_FROM``).  When SMTP is not configured the helper logs and
+returns silently so that the rest of the app keeps working in offline
+/ dev mode.
+"""
 from __future__ import annotations
 
 import os

@@ -1,5 +1,23 @@
-from __future__ import annotations
+"""Geocoding and multimodal-routing primitives for the DDN tool.
 
+Provides:
+
+* :func:`geocode` – free-form address → :class:`GeoPoint`, backed by
+  (1) a manual override JSON, (2) a GeoNames-derived name index with
+  fuzzy / article-stripped fallbacks, and (3) optional Nominatim live
+  lookup when ``DDN_OFFLINE`` is unset.
+* :func:`osrm_route_km` – road distance via the configured OSRM
+  endpoint, with haversine fallback on error / 4xx / 5xx.
+* :func:`waterway_route_km` and helpers – inland-waterway routing via
+  Overpass + NetworkX shortest path; sea-leg fallback via ``searoute``.
+* :func:`find_nearest_quay` – picks the closest navigable
+  loading/unloading point to a given coordinate, combining a manual
+  pin file with on-the-fly Overpass queries.
+
+All network calls are short-circuited when ``DDN_OFFLINE=1`` and all
+results are aggressively cached (in-process + on-disk where useful).
+"""
+from __future__ import annotations
 import json
 import logging
 import math

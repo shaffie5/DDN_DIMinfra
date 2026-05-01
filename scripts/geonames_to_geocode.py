@@ -6,8 +6,14 @@ This script downloads the GeoNames allCountries.zip dataset, extracts it, and co
 - Each entry: {"placename, country": [lat, lon]}
 - You can adjust the fields as needed for your use case.
 
-Usage:
-    python geonames_to_geocode.py
+Usage (must be run from the repository root, since output and temp
+files are written relative to the current working directory):
+
+    python scripts/geonames_to_geocode.py
+
+Outputs ``data/geocode_overrides.json`` (~500 MB). Temp files
+``allCountries.zip`` and ``allCountries.txt`` are written to the
+current directory and may be deleted after the run.
 """
 import os
 import json

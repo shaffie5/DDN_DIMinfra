@@ -1,3 +1,12 @@
+"""Persistence layer for delivery notes, signatures, and users.
+
+Wraps a single SQLite database (``data/ddn.sqlite``) plus an on-disk
+folder for signature PNGs (``data/signatures/``).  All public functions
+are thread-safe via per-call connections (no shared cursor).
+
+Consumed by :mod:`flask_app` only.  No third-party ORM is used; the
+schema is created/migrated lazily on first call.
+"""
 from __future__ import annotations
 
 import json
