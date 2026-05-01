@@ -34,12 +34,40 @@ _OVERRIDES: dict[str, tuple[float, float]] | None = None
 # Secondary index: name-only -> (lat, lon) chosen from the most-preferred
 # country in COUNTRY_PREFERENCE (so "genk" resolves to genk, BE not the US).
 _NAME_INDEX: dict[str, tuple[float, float]] | None = None
+# Tertiary index: aggressively normalised name (hyphens->space, articles
+# stripped, multi-space collapsed) so user inputs like
+# "Koudekerk-aan-de-Rijn" still match GeoNames "Koudekerk aan den Rijn".
+_NAME_INDEX_NORM: dict[str, tuple[float, float]] | None = None
 
 # Country-code preference for ambiguous bare-name lookups (lower index = higher priority).
 COUNTRY_PREFERENCE: tuple[str, ...] = tuple(
     (os.getenv("DDN_GEOCODE_COUNTRY_PREFERENCE")
      or "be,nl,lu,fr,de,it,es,pl,no,dk,se").lower().split(",")
 )
+
+# Common articles / linking words to strip when fuzzy-matching place names.
+_ARTICLE_TOKENS: frozenset[str] = frozenset({
+    # Dutch
+    "de", "den", "der", "het", "een", "aan", "op", "in", "te", "ten", "ter",
+    # French
+    "le", "la", "les", "l", "du", "des", "d", "au", "aux", "sur", "sous",
+    # German
+    "am", "im", "an", "auf", "bei", "vom", "zur", "zum",
+    # English
+    "the", "of", "on", "at",
+})
+
+
+def _aggr_norm(s: str) -> str:
+    """Aggressive normalisation: lowercase, hyphen/apostrophe -> space,
+    drop common articles, collapse whitespace.  Used as a last-resort
+    fuzzy match between user input and the GeoNames-derived index.
+    """
+    if not s:
+        return ""
+    s = s.lower().replace("-", " ").replace("'", " ").replace("'", " ")
+    toks = [t for t in s.split() if t and t not in _ARTICLE_TOKENS]
+    return " ".join(toks)
 
 
 def _load_overrides() -> dict[str, tuple[float, float]]:
@@ -54,11 +82,12 @@ def _load_overrides() -> dict[str, tuple[float, float]]:
     the same bare name occurs in multiple countries, the entry from the
     earliest country in :data:`COUNTRY_PREFERENCE` wins.
     """
-    global _OVERRIDES, _NAME_INDEX
+    global _OVERRIDES, _NAME_INDEX, _NAME_INDEX_NORM
     if _OVERRIDES is not None:
         return _OVERRIDES
     out: dict[str, tuple[float, float]] = {}
     name_best: dict[str, tuple[int, tuple[float, float]]] = {}
+    norm_best: dict[str, tuple[int, tuple[float, float]]] = {}
     pref_rank = {cc: i for i, cc in enumerate(COUNTRY_PREFERENCE)}
     fallback_rank = len(COUNTRY_PREFERENCE) + 1
     if _OVERRIDES_PATH.exists():
@@ -85,12 +114,19 @@ def _load_overrides() -> dict[str, tuple[float, float]]:
                         cur = name_best.get(name_part)
                         if cur is None or rank < cur[0]:
                             name_best[name_part] = (rank, coord)
+                        norm = _aggr_norm(name_part)
+                        if norm and norm != name_part:
+                            cur_n = norm_best.get(norm)
+                            if cur_n is None or rank < cur_n[0]:
+                                norm_best[norm] = (rank, coord)
         except Exception as e:
             log.warning("Failed to load geocode overrides %s: %s", _OVERRIDES_PATH, e)
     _OVERRIDES = out
     _NAME_INDEX = {n: c for n, (_, c) in name_best.items()}
-    log.info("Geocode overrides loaded: %d full keys, %d name-only fallbacks",
-             len(out), len(_NAME_INDEX))
+    # Don't shadow exact name hits with the looser normalised form.
+    _NAME_INDEX_NORM = {n: c for n, (_, c) in norm_best.items() if n not in _NAME_INDEX}
+    log.info("Geocode overrides loaded: %d full keys, %d name-only fallbacks, %d normalised fallbacks",
+             len(out), len(_NAME_INDEX), len(_NAME_INDEX_NORM))
     return out
 
 
@@ -98,6 +134,12 @@ def _name_index() -> dict[str, tuple[float, float]]:
     if _NAME_INDEX is None:
         _load_overrides()
     return _NAME_INDEX or {}
+
+
+def _name_index_norm() -> dict[str, tuple[float, float]]:
+    if _NAME_INDEX_NORM is None:
+        _load_overrides()
+    return _NAME_INDEX_NORM or {}
 
 
 def _lookup_name_only(query_key: str) -> tuple[float, float] | None:
@@ -140,6 +182,18 @@ def _lookup_name_only(query_key: str) -> tuple[float, float] | None:
         stripped = " ".join(tokens).strip()
         if stripped and stripped != cand and stripped in idx:
             return idx[stripped]
+    # Aggressive-normalisation fallback: handles hyphenated multi-word place
+    # names and article variants ("Koudekerk-aan-de-Rijn" vs
+    # "Koudekerk aan den Rijn", "L'Hospitalet" vs "Hospitalet", ...).
+    norm_idx = _name_index_norm()
+    if norm_idx:
+        for cand in candidates:
+            n = _aggr_norm(cand)
+            if not n:
+                continue
+            hit = norm_idx.get(n) or idx.get(n)
+            if hit is not None:
+                return hit
     return None
 
 
