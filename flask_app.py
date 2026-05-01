@@ -1382,16 +1382,76 @@ def _waterway_logistics(
                 "leg":    "main",
             })
     else:
-        # No quay → cannot route; show straight line so the row stays visible.
-        routes.append({
-            "name":   f"{name} ({mode.lower()})",
-            "mode":   mode,
-            "coords": [(origin_pt.lat, origin_pt.lon),
-                       (plant_pt.lat, plant_pt.lon)],
-            "source": "straight",
-            "routed_length_km": None,
-            "leg":    "main",
-        })
+        # No quay match in manual overrides — still try the waterway router
+        # directly between origin and plant.  The Overpass/BRouter routers
+        # internally snap to the nearest canal node, which effectively
+        # locates a usable quay.  Only if that also fails do we fall back
+        # to a straight line.
+        wcoords, wlen, wsrc = geo.waterway_route_geometry(
+            origin_pt, plant_pt, mode=mode,
+        )
+        if wcoords:
+            barge_km = wlen
+            routes.append({
+                "name":   f"{name} ({mode.lower()})",
+                "mode":   mode,
+                "coords": wcoords,
+                "source": wsrc,
+                "routed_length_km": round(wlen, 1) if wlen else None,
+                "leg":    "main",
+            })
+            # Infer load/unload quays from the snapped route endpoints so
+            # we can still split out the truck pre/post-legs.
+            load_lat, load_lon = wcoords[0]
+            unload_lat, unload_lon = wcoords[-1]
+            origin_quay = geo.GeoPoint(
+                lat=float(load_lat), lon=float(load_lon),
+                label=f"Loading quay (auto, {wsrc})",
+            )
+            plant_quay = geo.GeoPoint(
+                lat=float(unload_lat), lon=float(unload_lon),
+                label=f"Unloading quay (auto, {wsrc})",
+            )
+            # Drop the earlier "no quay" warnings — we recovered.
+            log_rec["warnings"] = [
+                w for w in log_rec["warnings"]
+                if "laadkade" not in w and "loskade" not in w
+            ]
+            # Truck pre-leg now that we have an inferred loading quay.
+            crow_pre = geo.haversine_km(origin_pt, origin_quay)
+            if crow_pre > _QUAY_SPLIT_THRESHOLD_KM:
+                pre_geom = geo.osrm_route_geometry(origin_pt, origin_quay)
+                pre_osrm = geo.osrm_route_km(origin_pt, origin_quay)
+                pre_km = pre_osrm[0] if pre_osrm else crow_pre
+                routes.append({
+                    "name":   f"{name} (truck → quay)",
+                    "mode":   "Truck",
+                    "coords": pre_geom or [(origin_pt.lat, origin_pt.lon),
+                                           (origin_quay.lat, origin_quay.lon)],
+                    "source": "osrm" if pre_geom else "straight",
+                    "routed_length_km": round(pre_km, 1),
+                    "leg":    "pre_truck",
+                })
+            else:
+                pre_km = 0.0
+            quays.append({
+                "lat": origin_quay.lat, "lon": origin_quay.lon,
+                "label": origin_quay.label or "Loading quay",
+                "kind": "load", "for": name,
+            })
+        else:
+            log_rec["warnings"].append(
+                "Geen kade en geen vaarroute gevonden; afstand is hemelsbreed."
+            )
+            routes.append({
+                "name":   f"{name} ({mode.lower()})",
+                "mode":   mode,
+                "coords": [(origin_pt.lat, origin_pt.lon),
+                           (plant_pt.lat, plant_pt.lon)],
+                "source": "straight",
+                "routed_length_km": None,
+                "leg":    "main",
+            })
 
     # 4) Truck post-leg: unloading quay → plant.
     post_km: float | None = None
