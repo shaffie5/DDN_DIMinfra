@@ -1,0 +1,59 @@
+# Self-hosted offline routing stack for DDN_DIMinfra.
+#
+#   • osrm-backend  — road / truck routing (port 5500)
+#   • brouter       — inland-waterway routing (port 17777)
+#
+# Both expose plain HTTP and require no external network at runtime;
+# all data lives under ./data/{osrm,brouter}/ on the host.
+#
+# Quick start (Belgium + NL + LU):
+#   1) ./scripts/prepare-osrm.ps1 -Region benelux        # downloads & preprocesses ~500 MB PBF
+#   2) ./scripts/prepare-brouter.ps1 -Region benelux     # downloads BRouter rd5 segments
+#   3) docker compose -f docker-compose.routing.yml up -d
+#   4) Copy .env.example -> .env and load it (or set the vars in your shell)
+#   5) python flask_app.py
+#
+# Western-Europe extract (~6 GB PBF, ~25 GB processed):
+#   1) ./scripts/prepare-osrm.ps1 -Region western-europe
+#   2) ./scripts/prepare-brouter.ps1 -Region western-europe
+#   3) docker compose -f docker-compose.routing.yml up -d
+#
+# Switching regions later: just re-run the prepare scripts (they
+# overwrite ./data/osrm and add to ./data/brouter/segments) and
+# `docker compose ... restart osrm`.
+
+services:
+  osrm:
+    image: ghcr.io/project-osrm/osrm-backend:v5.27.1
+    container_name: ddn-osrm
+    restart: unless-stopped
+    command: >
+      osrm-routed
+      --algorithm mld
+      --max-table-size 8000
+      --max-matching-size 5000
+      /data/region.osrm
+    ports:
+      - "5500:5000"
+    volumes:
+      - ./data/osrm:/data:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  brouter:
+    image: nrenner/brouter:latest
+    container_name: ddn-brouter
+    restart: unless-stopped
+    ports:
+      - "17777:17777"
+    volumes:
+      - ./data/brouter/segments:/segments4:ro
+      - ./data/brouter/profiles:/profiles2:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:17777/brouter"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

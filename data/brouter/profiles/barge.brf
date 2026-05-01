@@ -1,71 +1,24 @@
-#
-# barge.brf — BRouter routing profile for inland-waterway transport.
-#
-# Built on the standard OSM waterway tag schema:
-#   waterway = canal | river | fairway | ...
-#   ship     = yes | designated | no
-#   boat     = yes | designated | no
-#   CEMT     = I .. VII   (European waterway class — bigger ships need ≥ IV)
-#
-# The profile rewards moving along navigable waterways and forbids
-# everything else.  This is the opposite of every road profile shipped
-# with BRouter, so we cannot inherit; the file below is self-contained.
-#
-# Tested against the public BRouter v1.7+ engine.
-#
+﻿# barge.brf - BRouter routing profile for inland-waterway transport.
+# BRouter v1.7.9. Plain shortest-path on canal/river/fairway/lock_gate.
 
 ---context:global
 
-assign validForFoot       = false
-assign validForBikes      = false
-assign validForCars       = false
-
-# Hard cap on detour ratio. Past 2× the great-circle distance we'd
-# rather show a straight line than a wandering canal route.
-assign pass1coefficient   = 1.5
-assign pass2coefficient   = 0.0
+assign add_beeline    = false
+assign downhillcost   0
+assign downhillcutoff 1.5
+assign uphillcost     0
+assign uphillcutoff   1.5
 
 ---context:way
 
-assign is_waterway =
-  if      ( equal waterway canal   ) then true
-  else if ( equal waterway river   ) then true
-  else if ( equal waterway fairway ) then true
-  else if ( equal waterway stream  ) then true
-  else false
+assign turncost    0
+assign initialcost 0
 
-assign is_navigable =
-  if      ( equal ship      yes        ) then true
-  else if ( equal ship      designated ) then true
-  else if ( equal boat      yes        ) then true
-  else if ( equal motorboat yes        ) then true
-  # Most named canals/rivers omit the ship tag; treat any canal/river
-  # as navigable unless explicitly forbidden.
-  else if ( and is_waterway ( not ( equal ship no ) ) ) then true
-  else false
-
-assign turncost = 0
-
-# Forbid everything that isn't a navigable waterway.
-assign initialcost =
-  if ( not is_navigable ) then 1000000 else 0
-
-# Cost = length in metres for navigable waterways. Larger CEMT classes
-# get a small discount so the router prefers a main canal over a tiny
-# tributary when both reach the destination.
-assign costfactor =
-  if      ( not is_navigable ) then 10000.0
-  else if ( equal CEMT VII   ) then 0.85
-  else if ( equal CEMT VI    ) then 0.90
-  else if ( equal CEMT V     ) then 0.95
-  else if ( equal CEMT IV    ) then 1.00
-  else if ( equal CEMT III   ) then 1.10
-  else if ( equal CEMT II    ) then 1.30
-  else if ( equal CEMT I     ) then 1.60
-  else 1.20
+assign costfactor
+  switch or waterway=canal or waterway=river or waterway=fairway waterway=lock_gate
+    1.0
+    100000
 
 ---context:node
 
-# Locks add a fixed delay (modelled as extra cost = ~500 m of cruising).
-assign initialcost =
-  if ( equal lock yes ) then 500 else 0
+assign initialcost 0

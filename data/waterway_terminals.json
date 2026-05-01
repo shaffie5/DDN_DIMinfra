@@ -1,4 +1,24 @@
 {
   "_comment": "Manual quay/terminal coordinates [lat, lon] used for inland-waterway routing. Lookup is case-insensitive on the free-form 'Herkomst' string. Add an entry ONLY when you have verified the actual loading-quay coordinates (e.g. from the operator). Nominatim resolves quarry names to the office address, which is rarely on a canal — without a real pin, the searoute fallback usually produces nonsense and will be rejected by the routed-vs-crow sanity check (ratio > 3×).",
-  "_format": "\"<herkomst string>\": [latitude, longitude]"
+  "_format": "\"<herkomst string>\": [latitude, longitude]",
+  "Port of Shanghai, CN": [31.2304, 121.4737],
+  "Port of Singapore, SG": [1.2644, 103.8228],
+  "Port of Rotterdam, NL": [51.948, 4.142],
+  "Port of Los Angeles, US": [33.7326, -118.2671],
+  "Port of Antwerp, BE": [51.2637, 4.3894],
+  "Port of Hamburg, DE": [53.5461, 9.9661],
+  "Port of Dubai, AE": [25.276987, 55.296249],
+  "Port of Busan, KR": [35.1028, 129.0403],
+  "Port of Santos, BR": [-23.9678, -46.3281],
+  "Port of New York, US": [40.6681, -74.0451],
+  "Port of Hong Kong, HK": [22.3080, 114.2256],
+  "Port of Felixstowe, GB": [51.9556, 1.3111],
+  "Port of Tanjung Pelepas, MY": [1.3562, 103.5386],
+  "Port of Valencia, ES": [39.4362, -0.3161],
+  "Port of Algeciras, ES": [36.1275, -5.4411],
+  "Port of Piraeus, GR": [37.9475, 23.6371],
+  "Port of Jebel Ali, AE": [25.0094, 55.0617],
+  "Port of Savannah, US": [32.0809, -81.0912],
+  "Port of Long Beach, US": [33.7676, -118.1956],
+  "Port of Gioia Tauro, IT": [38.4386, 15.8986]
 }

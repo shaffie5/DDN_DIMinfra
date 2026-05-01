@@ -15,9 +15,14 @@ import requests
 log = logging.getLogger("ddn.geo")
 
 # Tunables (env-driven so deployment can adjust without code changes).
+OSRM_URL = os.getenv("OSRM_URL", "https://router.project-osrm.org").rstrip("/")
 OSRM_TIMEOUT_S = float(os.getenv("OSRM_TIMEOUT_S", "10.0"))
 NOMINATIM_TIMEOUT_S = float(os.getenv("NOMINATIM_TIMEOUT_S", "8.0"))
 NOMINATIM_MIN_INTERVAL_S = float(os.getenv("NOMINATIM_MIN_INTERVAL_S", "1.0"))
+
+# Master switch: set DDN_OFFLINE=1 to disable all live network routing
+# (OSRM road routing + Overpass inland-waterway graph). Defaults to live.
+OFFLINE_MODE = os.getenv("DDN_OFFLINE", "0") == "1"
 
 _GEOCODE_CACHE: dict[str, "GeoPoint | None"] = {}
 _GEOCODE_LOCK = threading.Lock()
@@ -26,6 +31,15 @@ _LAST_NOMINATIM_CALL = 0.0
 
 _OVERRIDES_PATH = Path(__file__).resolve().parent / "data" / "geocode_overrides.json"
 _OVERRIDES: dict[str, tuple[float, float]] | None = None
+# Secondary index: name-only -> (lat, lon) chosen from the most-preferred
+# country in COUNTRY_PREFERENCE (so "genk" resolves to genk, BE not the US).
+_NAME_INDEX: dict[str, tuple[float, float]] | None = None
+
+# Country-code preference for ambiguous bare-name lookups (lower index = higher priority).
+COUNTRY_PREFERENCE: tuple[str, ...] = tuple(
+    (os.getenv("DDN_GEOCODE_COUNTRY_PREFERENCE")
+     or "be,nl,lu,fr,de,it,es,pl,no,dk,se").lower().split(",")
+)
 
 
 def _load_overrides() -> dict[str, tuple[float, float]]:
@@ -34,23 +48,91 @@ def _load_overrides() -> dict[str, tuple[float, float]]:
     File format: ``{"address string": [lat, lon], ...}``.  Keys starting
     with ``_`` are treated as comments.  Lookup is case- and
     whitespace-insensitive.
+
+    Also builds a secondary "name only" index so queries like ``"Genk"``
+    can resolve against GeoNames-derived keys like ``"genk, be"``.  When
+    the same bare name occurs in multiple countries, the entry from the
+    earliest country in :data:`COUNTRY_PREFERENCE` wins.
     """
-    global _OVERRIDES
+    global _OVERRIDES, _NAME_INDEX
     if _OVERRIDES is not None:
         return _OVERRIDES
     out: dict[str, tuple[float, float]] = {}
+    name_best: dict[str, tuple[int, tuple[float, float]]] = {}
+    pref_rank = {cc: i for i, cc in enumerate(COUNTRY_PREFERENCE)}
+    fallback_rank = len(COUNTRY_PREFERENCE) + 1
     if _OVERRIDES_PATH.exists():
         try:
             raw = json.loads(_OVERRIDES_PATH.read_text(encoding="utf-8"))
             for k, v in raw.items():
                 if k.startswith("_"):
                     continue
-                if isinstance(v, (list, tuple)) and len(v) == 2:
-                    out[k.strip().lower()] = (float(v[0]), float(v[1]))
+                if not (isinstance(v, (list, tuple)) and len(v) == 2):
+                    continue
+                key = k.strip().lower()
+                try:
+                    coord = (float(v[0]), float(v[1]))
+                except (TypeError, ValueError):
+                    continue
+                out[key] = coord
+                # Build name-only index from "name, cc" keys.
+                if "," in key:
+                    name_part, _, cc_part = key.rpartition(",")
+                    name_part = name_part.strip()
+                    cc_part = cc_part.strip()
+                    if name_part and len(cc_part) == 2:
+                        rank = pref_rank.get(cc_part, fallback_rank)
+                        cur = name_best.get(name_part)
+                        if cur is None or rank < cur[0]:
+                            name_best[name_part] = (rank, coord)
         except Exception as e:
             log.warning("Failed to load geocode overrides %s: %s", _OVERRIDES_PATH, e)
     _OVERRIDES = out
+    _NAME_INDEX = {n: c for n, (_, c) in name_best.items()}
+    log.info("Geocode overrides loaded: %d full keys, %d name-only fallbacks",
+             len(out), len(_NAME_INDEX))
     return out
+
+
+def _name_index() -> dict[str, tuple[float, float]]:
+    if _NAME_INDEX is None:
+        _load_overrides()
+    return _NAME_INDEX or {}
+
+
+def _lookup_name_only(query_key: str) -> tuple[float, float] | None:
+    """Try a bare-name match against the GeoNames-derived index.
+
+    Strips trailing house-number / street tokens progressively so e.g.
+    ``"robijnstraat 1"`` -> ``"robijnstraat"`` still resolves.
+    """
+    idx = _name_index()
+    if not idx:
+        return None
+    # Try the full query first, then progressively strip leading address parts.
+    candidates = [query_key]
+    # Strip postal codes / numbers from start and end of each comma-part.
+    parts = [p.strip() for p in query_key.split(",") if p.strip()]
+    if len(parts) > 1:
+        # Try last part (often the city).
+        candidates.append(parts[-1])
+        # And first part.
+        candidates.append(parts[0])
+    for cand in candidates:
+        if cand in idx:
+            return idx[cand]
+        # Strip trailing numeric tokens (e.g. "robijnstraat 1" -> "robijnstraat").
+        tokens = cand.split()
+        while tokens and tokens[-1].replace(".", "").replace("-", "").isdigit():
+            tokens.pop()
+        # Strip leading numeric tokens (e.g. postal code "3000 hasselt" -> "hasselt").
+        while tokens and tokens[0].replace(".", "").replace("-", "").isdigit():
+            tokens.pop(0)
+        stripped = " ".join(tokens).strip()
+        if stripped and stripped != cand and stripped in idx:
+            return idx[stripped]
+    return None
+
 
 
 def _nominatim_throttle() -> None:
@@ -90,43 +172,18 @@ def geocode(query: str, timeout_s: float | None = None) -> "GeoPoint | None":
             _GEOCODE_CACHE[key] = gp
         return gp
 
-    # 2) Public Nominatim
-    url = "https://nominatim.openstreetmap.org/search"
-    headers = {"User-Agent": "DDN-DIMinfra/1.0 (geocode)"}
+    # 2) Bare-name fallback against GeoNames-derived index
+    #    (resolves "Genk" -> "genk, be", "Robijnstraat 1" -> "robijnstraat", etc.)
+    name_hit = _lookup_name_only(key)
+    if name_hit is not None:
+        lat, lon = name_hit
+        gp = GeoPoint(lat=lat, lon=lon, label=f"{query} (geonames)")
+        with _GEOCODE_LOCK:
+            _GEOCODE_CACHE[key] = gp
+        return gp
 
-    # Try the full query first; if it fails, progressively simplify
-    # ("Company, City" → "City" → last whitespace token) so e.g.
-    # "Ankersmit Maastricht" resolves to Maastricht.
-    candidates: list[str] = [query.strip()]
-    if "," in query:
-        tail = query.rsplit(",", 1)[-1].strip()
-        if tail and tail not in candidates:
-            candidates.append(tail)
-    parts = query.strip().split()
-    if len(parts) > 1 and parts[-1] not in candidates:
-        candidates.append(parts[-1])
-
-    for q in candidates:
-        params = {"q": q, "format": "json", "limit": 1}
-        _nominatim_throttle()
-        try:
-            resp = requests.get(url, params=params, headers=headers, timeout=timeout_s)
-            resp.raise_for_status()
-            data = resp.json()
-            if not data:
-                continue
-            item = data[0]
-            gp = GeoPoint(
-                lat=float(item["lat"]),
-                lon=float(item["lon"]),
-                label=item.get("display_name") or query,
-            )
-            with _GEOCODE_LOCK:
-                _GEOCODE_CACHE[key] = gp
-            return gp
-        except Exception as e:
-            log.warning("Nominatim geocode failed for %r: %s", q, e)
-            continue
+    # OFFLINE MODE: Do not use Nominatim or any external geocoding. Only use manual overrides.
+    log.warning(f"No local geocode for '{query}'. Location may be outside cached region. Fallback to haversine/manual.")
     with _GEOCODE_LOCK:
         _GEOCODE_CACHE[key] = None
     return None
@@ -157,36 +214,59 @@ def haversine_km(a: GeoPoint, b: GeoPoint) -> float:
     return 2 * r * math.asin(math.sqrt(h))
 
 
-def osrm_route_km(a: GeoPoint, b: GeoPoint, timeout_s: float | None = None) -> tuple[float, float] | None:
-    """Returns (distance_km, duration_min) for driving route using public OSRM.
-
-    If OSRM fails, returns None and caller can fallback to haversine.
-    """
-    if timeout_s is None:
-        timeout_s = OSRM_TIMEOUT_S
+def _osrm_request(a: GeoPoint, b: GeoPoint, *, geometry: bool,
+                  timeout_s: float | None = None) -> dict | None:
+    """Call OSRM /route/v1/driving and return the parsed JSON, or None."""
+    if OFFLINE_MODE:
+        return None
     if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
-        log.warning("osrm_route_km: invalid coordinates a=%s b=%s", a, b)
         return None
-
-    url = (
-        "https://router.project-osrm.org/route/v1/driving/"
-        f"{a.lon},{a.lat};{b.lon},{b.lat}"
-        "?overview=false&alternatives=false&steps=false"
-    )
+    url = (f"{OSRM_URL}/route/v1/driving/"
+           f"{a.lon:.6f},{a.lat:.6f};{b.lon:.6f},{b.lat:.6f}")
+    params = {
+        "overview": "full" if geometry else "false",
+        "geometries": "geojson",
+        "alternatives": "false",
+        "steps": "false",
+    }
     try:
-        resp = requests.get(url, timeout=timeout_s)
+        resp = requests.get(
+            url,
+            params=params,
+            timeout=timeout_s or OSRM_TIMEOUT_S,
+            headers={"User-Agent": "DDN-DIMinfra/1.0 (road-router)"},
+        )
         resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
-        routes = data.get("routes")
-        if not routes:
-            return None
-        route = routes[0]
-        dist_km = float(route["distance"]) / 1000.0
-        dur_min = float(route["duration"]) / 60.0
-        return dist_km, dur_min
+        data = resp.json()
     except Exception as e:
-        log.warning("OSRM route failed: %s", e)
+        log.warning("OSRM request failed (%s -> %s): %s",
+                    (a.lat, a.lon), (b.lat, b.lon), e)
         return None
+    if data.get("code") != "Ok" or not data.get("routes"):
+        return None
+    return data
+
+
+def osrm_route_km(a: GeoPoint, b: GeoPoint, timeout_s: float | None = None) -> tuple[float, float] | None:
+    """Returns (distance_km, duration_min) for the driving route.
+
+    Uses OSRM (public demo server by default, or self-hosted via
+    ``OSRM_URL``).  Falls back to haversine when OSRM is unreachable so
+    the UI still gets a number.
+    """
+    if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
+        return None
+    data = _osrm_request(a, b, geometry=False, timeout_s=timeout_s)
+    if data is not None:
+        route = data["routes"][0]
+        dist_km = float(route.get("distance", 0.0)) / 1000.0
+        dur_min = float(route.get("duration", 0.0)) / 60.0
+        if dist_km > 0:
+            return (dist_km, dur_min)
+    # Fallback so UI still gets a number when OSRM is unreachable.
+    log.warning("osrm_route_km: falling back to haversine for %s -> %s",
+                (a.lat, a.lon), (b.lat, b.lon))
+    return (haversine_km(a, b), None)
 
 
 def osrm_route_geometry(
@@ -194,33 +274,21 @@ def osrm_route_geometry(
 ) -> list[tuple[float, float]] | None:
     """Return the full driving route as a list of (lat, lon) waypoints.
 
-    Uses the public OSRM demo server with full geometry.
-    Returns None on failure.
+    Falls back to a 2-point straight line when OSRM is unreachable.
     """
-    if timeout_s is None:
-        timeout_s = OSRM_TIMEOUT_S
     if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
-        log.warning("osrm_route_geometry: invalid coordinates a=%s b=%s", a, b)
         return None
-
-    url = (
-        "https://router.project-osrm.org/route/v1/driving/"
-        f"{a.lon},{a.lat};{b.lon},{b.lat}"
-        "?overview=full&geometries=geojson&alternatives=false&steps=false"
-    )
-    try:
-        resp = requests.get(url, timeout=timeout_s)
-        resp.raise_for_status()
-        data: dict[str, Any] = resp.json()
-        routes = data.get("routes")
-        if not routes:
-            return None
-        coords = routes[0]["geometry"]["coordinates"]
-        # OSRM returns [lon, lat]; convert to [lat, lon] for folium
-        return [(float(c[1]), float(c[0])) for c in coords]
-    except Exception as e:
-        log.warning("OSRM geometry failed: %s", e)
-        return None
+    data = _osrm_request(a, b, geometry=True, timeout_s=timeout_s)
+    if data is not None:
+        try:
+            geom = data["routes"][0]["geometry"]["coordinates"]
+            # GeoJSON returns [lon, lat]; Leaflet expects (lat, lon).
+            return [(float(lat), float(lon)) for lon, lat in geom]
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            log.warning("osrm_route_geometry: malformed response: %s", e)
+    log.warning("osrm_route_geometry: falling back to straight line for %s -> %s",
+                (a.lat, a.lon), (b.lat, b.lon))
+    return [(a.lat, a.lon), (b.lat, b.lon)]
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -328,92 +396,22 @@ def find_nearest_quay(
     """
     if not _is_valid_lat_lon(pt.lat, pt.lon):
         return None
-    radius_km = radius_km if radius_km is not None else QUAY_SEARCH_RADIUS_KM
-    cache_path = _quay_cache_path(pt.lat, pt.lon, radius_km)
-    cached = _waterway_cache_load(cache_path)
-    if cached is not None:
-        if cached.get("quay") is None:
-            return None
-        q = cached["quay"]
-        return GeoPoint(lat=q["lat"], lon=q["lon"], label=q.get("label"))
-
-    radius_m = int(radius_km * 1000)
-    # We accept anything that strongly implies an inland transhipment
-    # point: explicit quay / dock / pier / port tags, plus generic
-    # mooring + harbour features.
-    query = f"""
-[out:json][timeout:{int(OVERPASS_TIMEOUT_S)}];
-(
-  node(around:{radius_m},{pt.lat},{pt.lon})["waterway"="dock"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["waterway"="dock"];
-  node(around:{radius_m},{pt.lat},{pt.lon})["man_made"="pier"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["man_made"="pier"];
-  node(around:{radius_m},{pt.lat},{pt.lon})["man_made"="quay"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["man_made"="quay"];
-  node(around:{radius_m},{pt.lat},{pt.lon})["industrial"="port"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["industrial"="port"];
-  node(around:{radius_m},{pt.lat},{pt.lon})["landuse"="port"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["landuse"="port"];
-  node(around:{radius_m},{pt.lat},{pt.lon})["harbour"];
-  way(around:{radius_m},{pt.lat},{pt.lon})["harbour"];
-);
-out center tags 50;
-""".strip()
-
-    candidates: list[dict[str, Any]] = []
-    try:
-        # Overpass returns 406 if the User-Agent is the bare
-        # python-requests/* default (their abuse policy), so identify
-        # ourselves explicitly and ask for JSON.
-        resp = requests.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers={
-                "User-Agent": "DDN-DIMinfra/1.0 (waterway-quay-finder)",
-                "Accept": "application/json",
-            },
-            timeout=OVERPASS_TIMEOUT_S,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        for el in data.get("elements", []):
-            if el.get("type") == "node":
-                lat, lon = el.get("lat"), el.get("lon")
-            else:  # way / relation: use the centroid
-                c = el.get("center") or {}
-                lat, lon = c.get("lat"), c.get("lon")
-            if lat is None or lon is None:
-                continue
-            tags = el.get("tags", {}) or {}
-            name = (tags.get("name") or tags.get("ref")
-                    or tags.get("waterway") or tags.get("man_made")
-                    or tags.get("industrial") or tags.get("harbour")
-                    or "quay")
-            candidates.append({
-                "lat": float(lat), "lon": float(lon),
-                "name": str(name),
-                "dist_km": haversine_km(
-                    pt, GeoPoint(lat=float(lat), lon=float(lon)),
-                ),
-            })
-    except Exception as e:
-        log.warning("Overpass quay query failed near (%.4f,%.4f): %s",
-                    pt.lat, pt.lon, e)
-        # Don't cache transient network failures.
-        return None
-
-    if not candidates:
-        _waterway_cache_save(cache_path, {"quay": None})
-        return None
-
-    candidates.sort(key=lambda x: x["dist_km"])
-    best = candidates[0]
-    _waterway_cache_save(cache_path, {"quay": {
-        "lat": best["lat"], "lon": best["lon"],
-        "label": f"{best['name']} (~{best['dist_km']:.1f} km)",
-    }})
-    return GeoPoint(lat=best["lat"], lon=best["lon"],
-                    label=f"{best['name']} (~{best['dist_km']:.1f} km)")
+    # OFFLINE MODE: Only use cached/manual quay data. Try manual overrides first.
+    # Try to find the nearest quay from waterway_terminals.json
+    overrides = _load_waterway_overrides()
+    best = None
+    best_dist = float("inf")
+    for label, (lat, lon) in overrides.items():
+        d = haversine_km(pt, GeoPoint(lat=lat, lon=lon))
+        if d < best_dist:
+            best_dist = d
+            best = GeoPoint(lat=lat, lon=lon, label=label)
+    # Only snap if within 10 km (or radius_km if provided)
+    snap_radius = radius_km if radius_km is not None else 10
+    if best is not None and best_dist < snap_radius:
+        return best
+    log.warning(f"No quay within {snap_radius} km for {pt}. Location may be outside cached region. Fallback to haversine/manual.")
+    return None
 
 
 def _waterway_cache_key(a: "GeoPoint", b: "GeoPoint", mode: str) -> Path:
@@ -538,6 +536,12 @@ def _overpass_inland_route(
     except ImportError:
         return None, None
 
+    if OFFLINE_MODE:
+        return None, None
+
+    # Bbox enclosing both endpoints + a margin so the routing graph
+    # extends beyond the straight line (otherwise the path may dead-end
+    # at the bbox edge).
     margin = _INLAND_BBOX_MARGIN_DEG
     min_lat = min(a.lat, b.lat) - margin
     max_lat = max(a.lat, b.lat) + margin
@@ -548,67 +552,56 @@ def _overpass_inland_route(
     if not lines:
         return None, None
 
-    # Quantise nodes to ~11 m so adjoining ways share endpoints in the
-    # graph (OSM ways don't always reuse the same node IDs at junctions
-    # when fetched with `out geom`).
-    def key(lat: float, lon: float) -> tuple[int, int]:
-        return (round(lat * 1e4), round(lon * 1e4))
-
-    nodes: dict[tuple[int, int], tuple[float, float]] = {}
+    # Build a graph: each consecutive pair of points in a way becomes an edge
+    # weighted by haversine distance.  Coordinates are quantised so adjacent
+    # ways that share an endpoint connect into one component.
     g = nx.Graph()
+
+    def _q(p: tuple[float, float]) -> tuple[float, float]:
+        return (round(p[0], 5), round(p[1], 5))
+
     for line in lines:
-        prev_k = None
-        for lat, lon in line:
-            k = key(lat, lon)
-            if k not in nodes:
-                nodes[k] = (lat, lon)
-            if prev_k is not None and prev_k != k:
-                d = haversine_km(
-                    GeoPoint(lat=nodes[prev_k][0], lon=nodes[prev_k][1]),
-                    GeoPoint(lat=lat, lon=lon),
-                )
-                if g.has_edge(prev_k, k):
-                    if d < g[prev_k][k]["weight"]:
-                        g[prev_k][k]["weight"] = d
-                else:
-                    g.add_edge(prev_k, k, weight=d)
-            prev_k = k
+        for p1, p2 in zip(line, line[1:]):
+            n1, n2 = _q(p1), _q(p2)
+            if n1 == n2:
+                continue
+            d = haversine_km(GeoPoint(lat=p1[0], lon=p1[1]),
+                             GeoPoint(lat=p2[0], lon=p2[1]))
+            if g.has_edge(n1, n2):
+                if d < g[n1][n2]["weight"]:
+                    g[n1][n2]["weight"] = d
+            else:
+                g.add_edge(n1, n2, weight=d)
 
     if g.number_of_nodes() == 0:
         return None, None
 
-    def nearest_node(pt: "GeoPoint") -> tuple[tuple[int, int], float]:
-        best_k = None
-        best_d = float("inf")
-        for k, (lat, lon) in nodes.items():
-            d = haversine_km(pt, GeoPoint(lat=lat, lon=lon))
+    # Snap each endpoint to its nearest graph node (within INLAND_SNAP_MAX_KM).
+    def _snap(pt: GeoPoint) -> tuple[float, float] | None:
+        best_node = None
+        best_d = _INLAND_SNAP_MAX_KM
+        for node in g.nodes:
+            d = haversine_km(pt, GeoPoint(lat=node[0], lon=node[1]))
             if d < best_d:
-                best_d, best_k = d, k
-        return best_k, best_d
+                best_d = d
+                best_node = node
+        return best_node
 
-    src, src_d = nearest_node(a)
-    dst, dst_d = nearest_node(b)
+    src = _snap(a)
+    dst = _snap(b)
     if src is None or dst is None:
-        return None, None
-    if src_d > _INLAND_SNAP_MAX_KM or dst_d > _INLAND_SNAP_MAX_KM:
-        log.info("Overpass inland router: quay snap too far "
-                 "(src=%.1f km, dst=%.1f km > %.0f km)",
-                 src_d, dst_d, _INLAND_SNAP_MAX_KM)
         return None, None
 
     try:
         path = nx.shortest_path(g, src, dst, weight="weight")
-    except nx.NetworkXNoPath:
-        log.info("Overpass inland router: no waterway path between snapped "
-                 "endpoints (graph has %d nodes / %d edges)",
-                 g.number_of_nodes(), g.number_of_edges())
-        return None, None
-    except Exception as e:
-        log.warning("Overpass inland router: pathfinding error: %s", e)
+    except (nx.NetworkXNoPath, nx.NodeNotFound):
         return None, None
 
-    coords = [nodes[k] for k in path]
-    length_km = sum(g[path[i]][path[i + 1]]["weight"] for i in range(len(path) - 1))
+    coords = [(float(lat), float(lon)) for lat, lon in path]
+    length_km = 0.0
+    for p1, p2 in zip(coords, coords[1:]):
+        length_km += haversine_km(GeoPoint(lat=p1[0], lon=p1[1]),
+                                  GeoPoint(lat=p2[0], lon=p2[1]))
     return coords, length_km
 
 

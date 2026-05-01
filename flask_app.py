@@ -24,8 +24,14 @@ from typing import Any
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
-    jsonify, send_file, session, flash,
+    jsonify, send_file, send_from_directory, session, flash, abort,
 )
+from flask_login import (
+    LoginManager, UserMixin, login_user, logout_user,
+    login_required, current_user,
+)
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import excel_export
 import geo
@@ -76,6 +82,91 @@ app.config.update(
     SESSION_COOKIE_SECURE=os.getenv("DDN_COOKIE_SECURE", "0") == "1",
     MAX_CONTENT_LENGTH=int(os.getenv("DDN_MAX_UPLOAD_MB", "32")) * 1024 * 1024,
 )
+
+# ─────────────────────────────────────────────────────────────────────
+#  Authentication (Flask-Login + SQLAlchemy users.db)
+# ─────────────────────────────────────────────────────────────────────
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+db = SQLAlchemy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = "login"
+
+
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True)
+    password_hash = db.Column(db.String(256))
+
+
+@login_manager.user_loader
+def _load_user(user_id):
+    try:
+        return db.session.get(User, int(user_id))
+    except Exception:
+        return None
+
+
+with app.app_context():
+    db.create_all()
+
+
+# Public endpoints that do NOT require authentication.
+# - login/logout: obvious
+# - static/data: assets
+# - sign_page / sign_submit: external supervisor signing via tokenised link
+# - home: handled inline (only allowed with note+role query params, else
+#   redirects to /login)
+_PUBLIC_ENDPOINTS = {
+    "login", "logout", "static", "data_files", "data_logos",
+    "sign_page", "sign_submit",
+}
+
+
+@app.before_request
+def _require_login():
+    endpoint = request.endpoint or ""
+    if endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    # Allow the external signing entrypoint: /?note=...&role=...
+    if endpoint == "home" and request.args.get("note") and request.args.get("role"):
+        return None
+    if current_user.is_authenticated:
+        return None
+    return redirect(url_for("login", next=request.path))
+
+
+@app.route("/data/logos/<path:filename>")
+def data_logos(filename):
+    # Serve logo assets from data/logos/ (used by login page, etc.)
+    return send_from_directory(LOGOS_DIR, filename)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+    error = None
+    if request.method == "POST":
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
+        user = User.query.filter_by(username=username).first()
+        if user and user.password_hash and check_password_hash(user.password_hash, password):
+            login_user(user)
+            nxt = request.args.get("next") or url_for("home")
+            # Avoid open-redirect: only allow same-site relative paths.
+            if not nxt.startswith("/") or nxt.startswith("//"):
+                nxt = url_for("home")
+            return redirect(nxt)
+        error = "Invalid credentials"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
 
 # Hard cap on individual base64-encoded signature payload (1 MB raw PNG
 # is already absurd for a touch signature; reject anything larger).
@@ -854,36 +945,36 @@ def vn_preview(plant_index: int):
 
 @app.route("/gpp/vn/preview/<int:plant_index>/edit", methods=["POST"])
 def vn_preview_edit(plant_index: int):
-        # Handle manual quay entry for guaranteed accuracy
-        if request.form.get("add_manual_quay"):
-            quay_origin = (request.form.get("manual_quay_origin") or "").strip()
-            quay_lat = request.form.get("manual_quay_lat")
-            quay_lon = request.form.get("manual_quay_lon")
-            if quay_origin and quay_lat and quay_lon:
-                try:
-                    quay_lat = float(quay_lat)
-                    quay_lon = float(quay_lon)
-                    # Load or create waterway_terminals.json
-                    quay_path = Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
-                    if quay_path.exists():
-                        with quay_path.open("r", encoding="utf-8") as f:
-                            quay_data = json.load(f)
-                    else:
-                        quay_data = {}
-                    # Don't overwrite comments or format keys
-                    if quay_origin.lower() not in [k.lower() for k in quay_data.keys() if not k.startswith("_")]:
-                        quay_data[quay_origin] = [quay_lat, quay_lon]
-                        with quay_path.open("w", encoding="utf-8") as f:
-                            json.dump(quay_data, f, indent=2, ensure_ascii=False)
-                        flash(f"Handmatige kade toegevoegd voor '{quay_origin}'.", "success")
-                    else:
-                        flash(f"Kade voor '{quay_origin}' bestaat al.", "warning")
-                except Exception as e:
-                    flash(f"Fout bij toevoegen van kade: {e}", "error")
-            else:
-                flash("Vul alle velden in voor een handmatige kade.", "error")
-            return redirect(url_for("vn_preview", plant_index=plant_index))
-    """Apply manual herkomst / aanvoer-per overrides and re-render."""
+    # Handle manual quay entry for guaranteed accuracy
+    if request.form.get("add_manual_quay"):
+        quay_origin = (request.form.get("manual_quay_origin") or "").strip()
+        quay_lat = request.form.get("manual_quay_lat")
+        quay_lon = request.form.get("manual_quay_lon")
+        if quay_origin and quay_lat and quay_lon:
+            try:
+                quay_lat = float(quay_lat)
+                quay_lon = float(quay_lon)
+                # Load or create waterway_terminals.json
+                quay_path = Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
+                if quay_path.exists():
+                    with quay_path.open("r", encoding="utf-8") as f:
+                        quay_data = json.load(f)
+                else:
+                    quay_data = {}
+                # Don't overwrite comments or format keys
+                if quay_origin.lower() not in [k.lower() for k in quay_data.keys() if not k.startswith("_")]:
+                    quay_data[quay_origin] = [quay_lat, quay_lon]
+                    with quay_path.open("w", encoding="utf-8") as f:
+                        json.dump(quay_data, f, indent=2, ensure_ascii=False)
+                    flash(f"Handmatige kade toegevoegd voor '{quay_origin}'.", "success")
+                else:
+                    flash(f"Kade voor '{quay_origin}' bestaat al.", "warning")
+            except Exception as e:
+                flash(f"Fout bij toevoegen van kade: {e}", "error")
+        else:
+            flash("Vul alle velden in voor een handmatige kade.", "error")
+        return redirect(url_for("vn_preview", plant_index=plant_index))
+    # Apply manual herkomst / aanvoer-per overrides and re-render.
     if not session_has("vn_data") or vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
         return redirect(url_for("vn_upload_page"))

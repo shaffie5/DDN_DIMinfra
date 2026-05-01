@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head><title>Usage Logs</title></head>
+<body>
+  <h2>Usage Logs</h2>
+  <a href="{{ url_for('export_logs') }}">Export as CSV</a>
+  <table border="1">
+    <tr><th>User</th><th>Action</th><th>Timestamp</th><th>Session</th><th>Extra</th></tr>
+    {% for log in logs %}
+      <tr>
+        <td>{{ log.username }}</td>
+        <td>{{ log.action }}</td>
+        <td>{{ log.timestamp }}</td>
+        <td>{{ log.session_id }}</td>
+        <td>{{ log.extra }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>

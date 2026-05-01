@@ -268,3 +268,198 @@ The map payload schema:
 * **Show routed-vs-VN delta** — flag rows where
   `routed_length_km` differs from `distance_km` by > 10 % so the
   operator can investigate before signing the EPD.
+
+
+---
+
+## 8. Fully-offline routing stack (self-hosted OSRM + BRouter)
+
+For air-gapped deployments the app can run entirely on local routing services so no requests leave the host:
+
+* **OSRM** (truck/road routing) — replaces `router.project-osrm.org`.
+* **BRouter** (inland-waterway routing) — replaces public Overpass / searoute fallbacks.
+* **Geocoding** is already offline via `data/geocode_overrides.json` (8.7 M GeoNames entries).
+
+All wiring lives in [docker-compose.routing.yml](docker-compose.routing.yml) and the helper scripts under [scripts/](scripts).
+
+### One-time data prep
+
+The default `ddn` region covers the 11 countries DDN ships to:
+**Belgium, Netherlands, Luxembourg, France, Germany, Italy, Spain, Poland, Norway, Denmark, Sweden.**
+
+```powershell
+# DDN target countries (BE/NL/LU/FR/DE/IT/ES/PL/NO/DK/SE)
+# ~12 GB merged PBF, ~9 GB BRouter tiles
+./scripts/prepare-osrm.ps1    -Region ddn
+./scripts/prepare-brouter.ps1 -Region ddn
+
+# Smaller alternative: Benelux only (~500 MB PBF, ~250 MB tiles)
+./scripts/prepare-osrm.ps1    -Region benelux
+./scripts/prepare-brouter.ps1 -Region benelux
+```
+
+The `ddn` region downloads each country's PBF from Geofabrik separately (BE/NL/LU as `benelux`, then FR, DE, IT, ES, PL, NO, DK, SE) and merges them with `osmium merge` inside the `openmaptiles/openmaptiles-tools` Docker image. This avoids pulling the full 25 GB Europe extract while still giving cross-border routing.
+
+The OSRM script then runs the standard `extract -> partition -> customize` pipeline inside the official `osrm-backend` Docker image. Output lands in `data/osrm/region.osrm*`.
+
+#### Disk-constrained installs (target ~15 GB total)
+
+A full `ddn` graph occupies ~50 GB of `.osrm.*` files plus ~9 GB of BRouter tiles. To fit under ~15 GB total, add `-Slim`:
+
+```powershell
+./scripts/prepare-osrm.ps1    -Region ddn -Slim
+./scripts/prepare-brouter.ps1 -Region ddn
+```
+
+`-Slim` runs `osmium tags-filter` over the merged PBF first, keeping only ways with `highway=*`, `route=ferry` and `waterway=*` (plus the nodes/relations they reference). Buildings, POIs, addresses and land-use polygons are dropped — none of which OSRM uses for car/truck routing. Typical reduction:
+
+| Stage | Without `-Slim` | With `-Slim` |
+|---|---|---|
+| Merged PBF | ~12 GB | ~3 GB |
+| OSRM `.osrm.*` graph | ~50 GB | ~6 GB |
+| BRouter tiles (`ddn`) | ~9 GB | ~6 GB |
+| **Total kept on disk** | **~70 GB** | **~12-15 GB** |
+
+The script also deletes the per-country and merged PBFs after the graph is built (they are intermediate artefacts; OSRM only needs `region.osrm*` at runtime). Pass `-KeepSourcePbfs` to retain them.
+
+The BRouter script computes which 5° × 5° `.rd5` tiles cover the bbox and downloads them from `brouter.de/brouter/segments4/` into `data/brouter/segments/`.
+
+### Start the routing stack
+
+```powershell
+docker compose -f docker-compose.routing.yml up -d
+```
+
+This starts:
+
+| Service       | Host port | Container port | Purpose                                 |
+| ------------- | --------- | -------------- | --------------------------------------- |
+| `ddn-osrm`    | 5500      | 5000           | Truck routing (`/route/v1/driving/...`) |
+| `ddn-brouter` | 17777     | 17777          | Waterway routing                        |
+
+Both containers expose plain HTTP on localhost only and have `healthcheck` definitions so `docker compose ps` shows their status.
+
+### Point the app at the local routers
+
+Copy `.env.example` to `.env` and load it before launching `flask_app.py`:
+
+```powershell
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.+?)\s*$') {
+        Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
+    }
+}
+python flask_app.py
+```
+
+Key variables (already pre-filled in `.env.example`):
+
+```ini
+OSRM_URL=http://127.0.0.1:5500
+BROUTER_URL=http://127.0.0.1:17777
+DDN_OFFLINE=0          # set to 1 to bypass even the local routers
+```
+
+### Sanity check
+
+```powershell
+# OSRM (Antwerp -> Brussels)
+Invoke-RestMethod 'http://127.0.0.1:5500/route/v1/driving/4.40,51.22;4.36,50.85?overview=false'
+
+# BRouter (Genk -> Antwerp via the Albertkanaal, with the bundled barge profile)
+Invoke-RestMethod 'http://127.0.0.1:17777/brouter?lonlats=5.50,50.97|4.42,51.23&profile=barge&alternativeidx=0&format=geojson'
+```
+
+### Updating the data
+
+Geofabrik publishes daily PBF diffs; for most users a quarterly refresh is enough. Re-run both scripts (they overwrite without asking) and then:
+
+```powershell
+docker compose -f docker-compose.routing.yml restart
+```
+
+### Notes on the `western-europe` extract
+
+Geofabrik does not publish a single "Western Europe" sub-extract. `-Region western-europe` therefore downloads the full `europe-latest.osm.pbf` (~25 GB on disk, several hours to preprocess on a laptop). **Prefer `-Region ddn` instead** — it merges only the 11 needed countries via `osmium` and produces a much smaller graph while still covering all DDN destinations.
+
+For air-gapped deployments the app can run entirely on local routing services so no requests leave the host:
+
+* **OSRM** (truck/road routing) — replaces `router.project-osrm.org`.
+* **BRouter** (inland-waterway routing) — replaces public Overpass / searoute fallbacks.
+* **Geocoding** is already offline via `data/geocode_overrides.json` (8.7 M GeoNames entries).
+
+All wiring lives in [docker-compose.routing.yml](docker-compose.routing.yml) and the helper scripts under `scripts/`.
+
+### One-time data prep
+
+```powershell
+# Belgium + NL + LU  (~500 MB PBF, ~250 MB BRouter tiles)
+./scripts/prepare-osrm.ps1    -Region benelux
+./scripts/prepare-brouter.ps1 -Region benelux
+
+# OR full Western Europe  (~25 GB PBF, ~5 GB BRouter tiles)
+./scripts/prepare-osrm.ps1    -Region western-europe
+./scripts/prepare-brouter.ps1 -Region western-europe
+```
+
+The OSRM script downloads the Geofabrik `.osm.pbf` and runs the standard `extract → partition → customize` pipeline inside the official `osrm-backend` Docker image. Output lands in `data/osrm/region.osrm*`.
+
+The BRouter script computes which 5° × 5° `.rd5` tiles cover the bbox and downloads them from `brouter.de/brouter/segments4/` into `data/brouter/segments/`.
+
+### Start the routing stack
+
+```powershell
+docker compose -f docker-compose.routing.yml up -d
+```
+
+This starts:
+
+| Service       | Host port | Container port | Purpose                                 |
+| ------------- | --------- | -------------- | --------------------------------------- |
+| `ddn-osrm`    | 5500      | 5000           | Truck routing (`/route/v1/driving/...`) |
+| `ddn-brouter` | 17777     | 17777          | Waterway routing                        |
+
+Both containers expose plain HTTP on localhost only and have `healthcheck` definitions so `docker compose ps` shows their status.
+
+### Point the app at the local routers
+
+Copy `.env.example` to `.env` and load it before launching `flask_app.py`:
+
+```powershell
+Get-Content .env | ForEach-Object {
+    if ($_ -match '^\s*([^#=]+?)\s*=\s*(.+?)\s*$') {
+        Set-Item -Path "Env:$($matches[1])" -Value $matches[2]
+    }
+}
+python flask_app.py
+```
+
+Key variables (already pre-filled in `.env.example`):
+
+```ini
+OSRM_URL=http://127.0.0.1:5500
+BROUTER_URL=http://127.0.0.1:17777
+DDN_OFFLINE=0          # set to 1 to bypass even the local routers
+```
+
+### Sanity check
+
+```powershell
+# OSRM (Antwerp -> Brussels)
+Invoke-RestMethod 'http://127.0.0.1:5500/route/v1/driving/4.40,51.22;4.36,50.85?overview=false'
+
+# BRouter (Genk -> Antwerp via the Albertkanaal, with the bundled barge profile)
+Invoke-RestMethod 'http://127.0.0.1:17777/brouter?lonlats=5.50,50.97|4.42,51.23&profile=barge&alternativeidx=0&format=geojson'
+```
+
+### Updating the data
+
+Geofabrik publishes daily PBF diffs; for most users a quarterly refresh is enough. Re-run both scripts (they overwrite without asking) and then:
+
+```powershell
+docker compose -f docker-compose.routing.yml restart
+```
+
+### Notes on the `western-europe` extract
+
+Geofabrik does not publish a single "Western Europe" sub-extract. `-Region western-europe` therefore downloads the full `europe-latest.osm.pbf` (~25 GB on disk, several hours to preprocess on a laptop). For a smaller footprint, download per-country PBFs from Geofabrik and merge them with `osmium merge`, then pass `-Url file:///...` (or place the merged PBF in `data/osrm/` manually before re-running the partition/customize steps).

@@ -27,3 +27,16 @@ __pycache__/
 data/ddn.sqlite
 data/exports/
 data/signatures/
+
+# --- Large local data / tools (kept on disk, not tracked) ---
+allCountries.txt
+allCountries.zip
+data/geocode_overrides.json
+data/brouter/segments/
+data/osrm/
+tools/
+.env
+data/software_vn_uploads/
+data/vn_uploads/
+data/waterway_cache/
+data/logos/
