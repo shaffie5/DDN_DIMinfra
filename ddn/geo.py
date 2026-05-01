@@ -32,11 +32,13 @@ import requests
 
 from ._paths import (
     GEOCODE_OVERRIDES_PATH as _OVERRIDES_PATH,
+    NOMINATIM_CACHE_PATH as _NOMINATIM_CACHE_PATH,
     QUAY_CACHE_DIR as _QUAY_CACHE_DIR,
     WATERWAY_CACHE_DIR as _WATERWAY_CACHE_DIR,
     WATERWAY_NETWORK_CACHE_DIR as _OVERPASS_NETWORK_CACHE_DIR,
     WATERWAY_TERMINALS_PATH as _WATERWAY_OVERRIDES_PATH,
 )
+from . import oa_geocoder as _oa
 
 log = logging.getLogger("ddn.geo")
 
@@ -54,6 +56,20 @@ _GEOCODE_CACHE: dict[str, "GeoPoint | None"] = {}
 _GEOCODE_LOCK = threading.Lock()
 _NOMINATIM_LOCK = threading.Lock()
 _LAST_NOMINATIM_CALL = 0.0
+_NOMINATIM_DISK_CACHE: dict[str, tuple[float, float, str | None]] | None = None
+_NOMINATIM_DISK_CACHE_LOCK = threading.Lock()
+
+# Tokens that strongly suggest a free-form street address (a Nominatim
+# live lookup will be much more accurate than the GeoNames place
+# centroid for these).
+_STREET_TOKENS: frozenset[str] = frozenset({
+    "straat", "laan", "weg", "baan", "steenweg", "plein", "kade",
+    "dijk", "dreef", "lei", "singel", "park", "hof", "pad", "berg",
+    "rue", "avenue", "av", "boulevard", "bd", "chemin", "chaussée",
+    "chaussee", "place", "impasse", "allée", "allee",
+    "strasse", "straße", "weg", "platz",
+    "street", "st", "road", "rd", "lane", "ln", "drive", "dr",
+})
 
 _OVERRIDES: dict[str, tuple[float, float]] | None = None
 # Secondary index: name-only -> (lat, lon) chosen from the most-preferred
@@ -235,6 +251,112 @@ def _nominatim_throttle() -> None:
         _LAST_NOMINATIM_CALL = time.time()
 
 
+def _looks_like_address(query: str) -> bool:
+    """Heuristic: True when the query looks like a street address rather
+    than a bare place name. Used to decide whether a Nominatim live
+    lookup is worth the network cost (street-level accuracy) vs. the
+    cheaper GeoNames city-centroid fallback.
+    """
+    if not query:
+        return False
+    q = query.strip()
+    has_digit = any(ch.isdigit() for ch in q)
+    has_comma = "," in q
+    toks = {t.strip(".,").lower() for t in q.replace("-", " ").split() if t}
+    has_street_word = bool(toks & _STREET_TOKENS)
+    # Some Belgian/Dutch street suffixes are appended directly
+    # ("Iepermanlei", "Stationsstraat") — detect them as well.
+    has_street_suffix = any(
+        len(t) > 6 and t.endswith(("straat", "laan", "weg", "baan", "lei", "dijk", "dreef", "plein", "kade", "steenweg"))
+        for t in toks
+    )
+    return (has_digit and (has_comma or has_street_word or has_street_suffix)) or has_street_word or has_street_suffix
+
+
+def _load_nominatim_disk_cache() -> dict[str, tuple[float, float, str | None]]:
+    global _NOMINATIM_DISK_CACHE
+    with _NOMINATIM_DISK_CACHE_LOCK:
+        if _NOMINATIM_DISK_CACHE is not None:
+            return _NOMINATIM_DISK_CACHE
+        cache: dict[str, tuple[float, float, str | None]] = {}
+        try:
+            if _NOMINATIM_CACHE_PATH.exists():
+                with _NOMINATIM_CACHE_PATH.open("r", encoding="utf-8") as fh:
+                    raw = json.load(fh)
+                for k, v in (raw or {}).items():
+                    if not isinstance(v, (list, tuple)) or len(v) < 2:
+                        continue
+                    lat, lon = float(v[0]), float(v[1])
+                    label = v[2] if len(v) > 2 else None
+                    cache[k] = (lat, lon, label)
+        except Exception as e:
+            log.warning("Failed to read Nominatim cache: %s", e)
+        _NOMINATIM_DISK_CACHE = cache
+        return cache
+
+
+def _save_nominatim_disk_cache() -> None:
+    cache = _NOMINATIM_DISK_CACHE
+    if cache is None:
+        return
+    try:
+        _NOMINATIM_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _NOMINATIM_CACHE_PATH.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump({k: list(v) for k, v in cache.items()}, fh,
+                      ensure_ascii=False)
+        tmp.replace(_NOMINATIM_CACHE_PATH)
+    except Exception as e:
+        log.warning("Failed to write Nominatim cache: %s", e)
+
+
+def _nominatim_lookup(query: str, timeout_s: float) -> "GeoPoint | None":
+    """Live Nominatim search for *query*. Returns None on any failure.
+
+    Result is persisted to a small JSON disk cache so subsequent runs do
+    not re-hit the public service for the same input. Even when
+    ``DDN_OFFLINE=1`` we still consult that cache, so any previously
+    geocoded address keeps its street-level accuracy offline.
+    """
+    key = query.strip().lower()
+    cache = _load_nominatim_disk_cache()
+    hit = cache.get(key)
+    if hit is not None:
+        lat, lon, label = hit
+        return GeoPoint(lat=lat, lon=lon, label=label or query)
+    if OFFLINE_MODE:
+        return None
+    _nominatim_throttle()
+    url = "https://nominatim.openstreetmap.org/search"
+    params = {
+        "q": query,
+        "format": "json",
+        "limit": 1,
+        "addressdetails": 0,
+    }
+    headers = {"User-Agent": "DDN-DIMinfra/1.0 (geocode)"}
+    try:
+        resp = requests.get(url, params=params, headers=headers,
+                            timeout=timeout_s)
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("Nominatim lookup failed for %r: %s", query, e)
+        return None
+    if not data:
+        return None
+    item = data[0]
+    try:
+        lat = float(item["lat"])
+        lon = float(item["lon"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    label = item.get("display_name") or query
+    cache[key] = (lat, lon, label)
+    _save_nominatim_disk_cache()
+    return GeoPoint(lat=lat, lon=lon, label=label)
+
+
 def geocode(query: str, timeout_s: float | None = None) -> "GeoPoint | None":
     """Geocode a free-form address/place via Nominatim. Cached in-process.
 
@@ -260,7 +382,37 @@ def geocode(query: str, timeout_s: float | None = None) -> "GeoPoint | None":
             _GEOCODE_CACHE[key] = gp
         return gp
 
-    # 2) Bare-name fallback against GeoNames-derived index
+    # 2) For street-level addresses prefer Nominatim *before* the
+    #    GeoNames bare-name index, which would otherwise resolve
+    #    "Iepermanlei 29, 2610 Antwerpen" to the Antwerpen city centroid
+    #    (kilometres off). Even when DDN_OFFLINE=1 we still consult the
+    #    Nominatim disk cache so previously-resolved addresses keep
+    #    their street-level accuracy offline.
+    if _looks_like_address(query):
+        gp = _nominatim_lookup(query, timeout_s)
+        if gp is not None:
+            with _GEOCODE_LOCK:
+                _GEOCODE_CACHE[key] = gp
+            return gp
+
+        # 2b) Offline street-level fallbacks for unseen addresses:
+        #     local OpenAddresses SQLite, then optional self-hosted Pelias.
+        oa_hit = _oa.oa_lookup(query)
+        if oa_hit is not None:
+            lat, lon, label = oa_hit
+            gp = GeoPoint(lat=lat, lon=lon, label=label)
+            with _GEOCODE_LOCK:
+                _GEOCODE_CACHE[key] = gp
+            return gp
+        pelias_hit = _oa.pelias_lookup(query)
+        if pelias_hit is not None:
+            lat, lon, label = pelias_hit
+            gp = GeoPoint(lat=lat, lon=lon, label=label)
+            with _GEOCODE_LOCK:
+                _GEOCODE_CACHE[key] = gp
+            return gp
+
+    # 3) Bare-name fallback against GeoNames-derived index
     #    (resolves "Genk" -> "genk, be", "Robijnstraat 1" -> "robijnstraat", etc.)
     name_hit = _lookup_name_only(key)
     if name_hit is not None:
@@ -270,7 +422,15 @@ def geocode(query: str, timeout_s: float | None = None) -> "GeoPoint | None":
             _GEOCODE_CACHE[key] = gp
         return gp
 
-    # OFFLINE MODE: Do not use Nominatim or any external geocoding. Only use manual overrides.
+    # 4) Last resort: a generic Nominatim lookup (place names that are
+    #    not in the local index, e.g. quarry/works names). Also tries
+    #    the disk cache offline before giving up.
+    gp = _nominatim_lookup(query, timeout_s)
+    if gp is not None:
+        with _GEOCODE_LOCK:
+            _GEOCODE_CACHE[key] = gp
+        return gp
+
     log.warning(f"No local geocode for '{query}'. Location may be outside cached region. Fallback to haversine/manual.")
     with _GEOCODE_LOCK:
         _GEOCODE_CACHE[key] = None
@@ -995,3 +1155,32 @@ def _brouter_route(
     except Exception as e:
         log.warning("BRouter waterway route failed (%s → %s): %s", a, b, e)
         return None, None
+
+
+# ---------------------------------------------------------------------------
+# Background pre-warm helper (called from upload routes)
+# ---------------------------------------------------------------------------
+def warm_addresses_async(addresses):
+    """Resolve *addresses* in a daemon thread so they land in the disk cache.
+
+    Fire-and-forget. Returns the started thread (mostly useful for tests).
+    Skips empty / duplicate inputs. Network errors are swallowed so the
+    caller's request handler is unaffected.
+    """
+    import threading as _t
+    seen = set(); unique = []
+    for q in addresses or ():
+        if not q: continue
+        k = q.strip().lower()
+        if k and k not in seen:
+            seen.add(k); unique.append(q.strip())
+    if not unique:
+        return None
+    def _run():
+        for q in unique:
+            try: geocode(q)
+            except Exception: pass
+    th = _t.Thread(target=_run, name='geocode-prewarm', daemon=True)
+    th.start()
+    return th
+

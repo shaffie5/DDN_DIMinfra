@@ -890,6 +890,21 @@ def vn_upload_submit():
     session_set("vn_data", vn_data.to_dict())
     session_pop("vn_mapping")
 
+    # Auto-warm the geocoder cache for every address in this upload so
+    # subsequent runs (incl. offline) get street-level accuracy for free.
+    try:
+        addrs: list[str] = []
+        for plant in getattr(vn_data, "plants", []) or []:
+            if getattr(plant, "plant_location", None):
+                addrs.append(plant.plant_location)
+            for c in getattr(plant, "components", []) or []:
+                origin = getattr(c, "origin", None)
+                if origin:
+                    addrs.append(origin)
+        geo.warm_addresses_async(addrs)
+    except Exception:
+        pass  # never let the warm-up break the upload
+
     return redirect(url_for("vn_select_plant"))
 
 
@@ -1698,6 +1713,20 @@ def software_vn_upload_submit():
     session["svn_token"] = token
     session["svn_filename"] = uploaded.filename
     session_set("svn_data", svn_data.to_dict())
+
+    # Auto-warm the geocoder cache for every address in this Software VN.
+    try:
+        addrs: list[str] = []
+        for plant in getattr(svn_data, "plants", []) or []:
+            if getattr(plant, "plant_location", None):
+                addrs.append(plant.plant_location)
+            for c in getattr(plant, "components", []) or []:
+                origin = getattr(c, "origin", None)
+                if origin:
+                    addrs.append(origin)
+        geo.warm_addresses_async(addrs)
+    except Exception:
+        pass
 
     return redirect(url_for("software_vn_select_plant"))
 

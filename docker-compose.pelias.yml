@@ -1,0 +1,92 @@
+# BeNeLux-only Pelias geocoder for offline street-level fallback.
+#
+# This is a **slim wrapper** around the official `pelias/docker` setup.
+# The full bring-up is a multi-step import:
+#
+#   1. Clone the official repo somewhere on your machine:
+#        git clone https://github.com/pelias/docker pelias
+#        cd pelias
+#
+#   2. Use the BeNeLux project (smallest sensible region for this tool):
+#        cp projects/benelux/pelias.json .
+#        cp projects/benelux/docker-compose.yml docker-compose.full.yml
+#        cp projects/benelux/.env .
+#
+#   3. One-time data import (downloads OSM/WhosOnFirst/OpenAddresses
+#      extracts for BeNeLux ~ 3-8 GB total):
+#        ./pelias compose pull
+#        ./pelias elastic start
+#        ./pelias elastic wait
+#        ./pelias elastic create
+#        ./pelias download all
+#        ./pelias prepare all
+#        ./pelias import all
+#        ./pelias compose up
+#
+#   4. Then point this app at the local API:
+#        $env:PELIAS_URL="http://localhost:4000"
+#        python flask_app.py
+#
+# The compose file below is provided for users who already have a
+# pre-built Pelias data volume and just want to bring up the API
+# alongside the DDN tool. It assumes the Elasticsearch + placeholder
+# + libpostal images and data volumes from the official import already
+# exist (created by the steps above).
+#
+# Disk usage: ~3-8 GB for BeNeLux. Set PELIAS_URL in your env to enable
+# the fallback in ddn/oa_geocoder.py.
+
+services:
+  api:
+    image: pelias/api:master
+    container_name: pelias_api
+    environment:
+      - PORT=4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./pelias.json:/code/pelias.json:ro
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+      - placeholder
+      - libpostal
+      - interpolation
+
+  elasticsearch:
+    image: pelias/elasticsearch:7.16.1
+    container_name: pelias_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms2g -Xmx2g"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+    volumes:
+      - pelias_es_data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  placeholder:
+    image: pelias/placeholder:master
+    container_name: pelias_placeholder
+    volumes:
+      - pelias_placeholder_data:/data/placeholder
+    environment:
+      - PORT=4100
+    restart: unless-stopped
+
+  libpostal:
+    image: pelias/libpostal-service:latest
+    container_name: pelias_libpostal
+    restart: unless-stopped
+
+  interpolation:
+    image: pelias/interpolation:master
+    container_name: pelias_interpolation
+    volumes:
+      - pelias_interpolation_data:/data/interpolation
+    restart: unless-stopped
+
+volumes:
+  pelias_es_data:
+  pelias_placeholder_data:
+  pelias_interpolation_data:
