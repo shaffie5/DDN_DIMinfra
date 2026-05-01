@@ -25,7 +25,7 @@ from typing import Any
 
 import xlwings as xw
 
-GPP_TEMPLATE = Path(__file__).resolve().parent / "gpp_link" / "PIONEERS GPP TOOL_20260310.xlsx"
+from ._paths import GPP_TEMPLATE_PATH as GPP_TEMPLATE
 
 # ─────────────────────────────────────────────────────────────────────
 #  DDN Payload → GPP Input Cell Mapping

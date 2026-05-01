@@ -13,6 +13,9 @@
 </div>
 {% endif %}
 
+{% set _check_sum_zero = (results.check_sum is defined and results.check_sum is not none and ("%.4f"|format(results.check_sum)) == "0.0000") %}
+{% set _check_pass = results.check_ok or _check_sum_zero %}
+
 {# Compute Climate change row total from impact_matrix (sum across
    all displayed lifecycle stages for the 'Climate change' category). #}
 {% set cc_ns = namespace(total=0.0, has_value=false) %}
@@ -28,8 +31,7 @@
 {% endfor %}
 
 <div class="row">
-  {% set _check_sum_zero = (results.check_sum is defined and results.check_sum is not none and ("%.4f"|format(results.check_sum)) == "0.0000") %}
-  {% set _check_pass = results.check_ok or _check_sum_zero %}
+  {% if _check_pass %}
   <div class="col-md-6">
     <div class="card text-center shadow-sm mb-3">
       <div class="card-body">
@@ -41,7 +43,8 @@
       </div>
     </div>
   </div>
-  <div class="col-md-6">
+  {% endif %}
+  <div class="{% if _check_pass %}col-md-6{% else %}col-md-12{% endif %}">
     <div class="card text-center shadow-sm mb-3">
       <div class="card-body">
         <h6 class="text-muted">Validatiecheck</h6>
@@ -55,6 +58,16 @@
     </div>
   </div>
 </div>
+
+{% if not _check_pass %}
+<div class="alert alert-danger">
+  <strong>Resultaten verborgen:</strong> de validatiecheck is niet geslaagd
+  (som = {{ "%.4f"|format(results.check_sum) if results.check_sum is not none else "?" }}).
+  Corrigeer de invoer en bereken opnieuw om de resultaten te tonen.
+</div>
+{% endif %}
+
+{% if _check_pass %}
 
 <h4 class="mt-4">Dashboard</h4>
 <dl class="row small">
@@ -155,13 +168,15 @@
 </table>
 </div>
 
+{% endif %}
+
 <a href="{{ url_for('vn_select_plant') }}" class="btn btn-outline-secondary mt-3">
   <i class="fa fa-arrow-left"></i> Andere centrale
 </a>
 <a href="{{ url_for('vn_upload_page') }}" class="btn btn-outline-secondary mt-3">
   <i class="fa fa-upload"></i> Nieuw bestand
 </a>
-{% if gpp_filename %}
+{% if gpp_filename and _check_pass %}
 <a href="{{ url_for('gpp_download', filename=gpp_filename) }}" class="btn btn-success mt-3">
   <i class="fa fa-download"></i> Download ingevuld GPP-bestand
 </a>

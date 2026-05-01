@@ -33,11 +33,8 @@ from flask_login import (
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 
-import excel_export
-import geo
-import mailer
-import ocr
-import storage
+from ddn import excel_export, geo, mailer, ocr, storage
+from ddn._paths import WATERWAY_TERMINALS_PATH
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -46,24 +43,23 @@ logging.basicConfig(
 log = logging.getLogger("ddn")
 
 try:
-    import gpp_integration
+    from ddn import gpp_integration
 except Exception:
     gpp_integration = None
 
 try:
-    import gpp_engine
+    from ddn import gpp_engine
 except Exception:
     gpp_engine = None
 
 try:
-    import vn_parser
-    import vn_to_gpp
+    from ddn import vn_parser, vn_to_gpp
 except Exception:
     vn_parser = None
     vn_to_gpp = None
 
 try:
-    import software_vn_parser
+    from ddn import software_vn_parser
 except Exception:
     software_vn_parser = None
 
@@ -963,7 +959,7 @@ def vn_preview_edit(plant_index: int):
                 quay_lat = float(quay_lat)
                 quay_lon = float(quay_lon)
                 # Load or create waterway_terminals.json
-                quay_path = Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
+                quay_path = WATERWAY_TERMINALS_PATH
                 if quay_path.exists():
                     with quay_path.open("r", encoding="utf-8") as f:
                         quay_data = json.load(f)

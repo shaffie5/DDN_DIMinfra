@@ -1,3 +1,14 @@
+"""Legacy / standalone Flask scaffold (NOT the production entry point).
+
+This file predates :mod:`flask_app` and exposes a tiny login + admin-log
+UI backed by Flask-Login and Flask-SQLAlchemy on its own ``users.db``
+SQLite file.  The active production app is :mod:`flask_app`.
+
+Kept in the tree because :file:`templates/admin_logs.html` is rendered
+from here and the route is occasionally used for ad-hoc usage-log
+inspection.  Run with ``python app.py`` (defaults to port 5000).
+Delete only after confirming :mod:`flask_app` covers the admin needs.
+"""
 from flask import Flask, render_template, redirect, url_for, request, session, send_file
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
 from flask_sqlalchemy import SQLAlchemy

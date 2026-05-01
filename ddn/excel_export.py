@@ -1,3 +1,10 @@
+"""Build delivery-note Excel workbooks (XLSX) with embedded signature images.
+
+Used by the DDN "download note" route in :mod:`flask_app`.  Optionally
+delegates the GPP-tool integration step to :mod:`gpp_integration` (see
+the ``GPP INTEGRATION POINT`` markers below); when that module is not
+available the workbook is still produced without GPP fields.
+"""
 from __future__ import annotations
 
 import io
