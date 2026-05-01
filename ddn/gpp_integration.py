@@ -198,8 +198,7 @@ def push_to_gpp(
     # raise NotImplementedError("GPP push not yet implemented.")
 
     # log_func("DONE!!!!!")
-    BASE_DIR = Path(__file__).resolve().parent
-    OUTPUT_DIR = BASE_DIR / "output"
+    from ._paths import BASE_DIR, OUTPUT_DIR  # noqa: F401
 
     # Validate configuration
     config_valid, config_errors = Config.validate()

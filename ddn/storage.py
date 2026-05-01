@@ -17,8 +17,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+from ._paths import BASE_DIR, DATA_DIR  # noqa: F401  (BASE_DIR re-exported for back-compat)
+
 DB_PATH = DATA_DIR / "ddn.sqlite"
 SIGNATURES_DIR = DATA_DIR / "signatures"
 

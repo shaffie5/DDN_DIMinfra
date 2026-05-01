@@ -30,6 +30,14 @@ from typing import Any
 
 import requests
 
+from ._paths import (
+    GEOCODE_OVERRIDES_PATH as _OVERRIDES_PATH,
+    QUAY_CACHE_DIR as _QUAY_CACHE_DIR,
+    WATERWAY_CACHE_DIR as _WATERWAY_CACHE_DIR,
+    WATERWAY_NETWORK_CACHE_DIR as _OVERPASS_NETWORK_CACHE_DIR,
+    WATERWAY_TERMINALS_PATH as _WATERWAY_OVERRIDES_PATH,
+)
+
 log = logging.getLogger("ddn.geo")
 
 # Tunables (env-driven so deployment can adjust without code changes).
@@ -47,7 +55,6 @@ _GEOCODE_LOCK = threading.Lock()
 _NOMINATIM_LOCK = threading.Lock()
 _LAST_NOMINATIM_CALL = 0.0
 
-_OVERRIDES_PATH = Path(__file__).resolve().parent / "data" / "geocode_overrides.json"
 _OVERRIDES: dict[str, tuple[float, float]] | None = None
 # Secondary index: name-only -> (lat, lon) chosen from the most-preferred
 # country in COUNTRY_PREFERENCE (so "genk" resolves to genk, BE not the US).
@@ -378,10 +385,6 @@ def osrm_route_geometry(
 
 # Disk cache: routed geometries never change for a given coordinate pair
 # + mode, and external routers (searoute, BRouter) are slow / rate-limited.
-_WATERWAY_CACHE_DIR = Path(__file__).resolve().parent / "data" / "waterway_cache"
-_WATERWAY_OVERRIDES_PATH = (
-    Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
-)
 _WATERWAY_OVERRIDES: dict[str, tuple[float, float]] | None = None
 
 # Optional self-hosted BRouter for inland waterways. When the env var
@@ -453,7 +456,6 @@ def waterway_terminal_for(label: str | None) -> "GeoPoint | None":
 OVERPASS_URL = os.getenv("OVERPASS_URL", "https://overpass-api.de/api/interpreter")
 OVERPASS_TIMEOUT_S = float(os.getenv("OVERPASS_TIMEOUT_S", "20.0"))
 QUAY_SEARCH_RADIUS_KM = float(os.getenv("QUAY_SEARCH_RADIUS_KM", "20.0"))
-_QUAY_CACHE_DIR = Path(__file__).resolve().parent / "data" / "waterway_cache" / "quays"
 
 
 def _quay_cache_path(lat: float, lon: float, radius_km: float) -> Path:
@@ -673,9 +675,6 @@ def _waterway_cache_save(path: Path, payload: dict) -> None:
 # Canal Nimy-Blaton) follow the real water — without needing BRouter
 # or Docker.
 
-_OVERPASS_NETWORK_CACHE_DIR = (
-    Path(__file__).resolve().parent / "data" / "waterway_cache" / "networks"
-)
 _INLAND_BBOX_MARGIN_DEG = float(os.getenv("INLAND_BBOX_MARGIN_DEG", "0.20"))
 _INLAND_SNAP_MAX_KM = float(os.getenv("INLAND_SNAP_MAX_KM", "8.0"))
 

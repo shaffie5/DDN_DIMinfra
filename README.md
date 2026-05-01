@@ -26,17 +26,20 @@ DDN_DIMinfra_New/
 ├─ flask_app.py               # Primary Flask entry point (this is the app)
 ├─ app.py                     # Legacy admin-log scaffold (see below)
 │
-├─ geo.py                     # Geocoding + OSRM/waterway routing
-├─ storage.py                 # SQLite layer for delivery notes / signatures
-├─ excel_export.py            # DDN delivery-note .xlsx builder
-├─ ocr.py                     # Optional OCR for scanned notes
-├─ mailer.py                  # SMTP helper
+├─ ddn/                       # Application package (all business logic)
+│  ├─ __init__.py
+│  ├─ _paths.py               # Single source of truth for filesystem paths
+│  ├─ storage.py              # SQLite layer for delivery notes / signatures
+│  ├─ excel_export.py         # DDN delivery-note .xlsx builder
+│  ├─ geo.py                  # Geocoding + OSRM/waterway routing
+│  ├─ mailer.py               # SMTP helper
+│  ├─ ocr.py                  # Optional OCR for scanned notes
+│  ├─ vn_parser.py            # Reads classic Verantwoordingsnota workbook
+│  ├─ software_vn_parser.py   # Reads Software-VN workbook variant
+│  ├─ vn_to_gpp.py            # Maps parsed components → GPP cells
+│  ├─ gpp_engine.py           # Runs the GPP formulas via xlwings
+│  └─ gpp_integration.py      # Glue between DDN and gpp_link
 │
-├─ vn_parser.py               # Reads classic Verantwoordingsnota workbook
-├─ software_vn_parser.py      # Reads Software-VN workbook variant
-├─ vn_to_gpp.py               # Maps parsed components → GPP cells
-├─ gpp_engine.py              # Runs the GPP formulas via xlwings
-├─ gpp_integration.py         # Glue between DDN and gpp_link
 ├─ gpp_link/                  # GPP standalone tools + Excel template
 │
 ├─ templates/                 # Jinja2 templates (Flask default location)

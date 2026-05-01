@@ -21,8 +21,8 @@ import re
 from dataclasses import dataclass, asdict, field
 from typing import Any
 
-import geo
-from vn_parser import VNComponent, VNPlant
+from . import geo
+from .vn_parser import VNComponent, VNPlant
 
 
 # ─────────────────────────────────────────────────────────────────────

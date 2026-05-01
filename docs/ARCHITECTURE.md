@@ -3,9 +3,10 @@
 This document is the working map of the codebase. Pair it with the
 [README](../README.md) for the user-facing description.
 
-> Status: snapshot taken during the `chore/restructure` cleanup.
-> Functionality unchanged — only docs, junk-deletions and folder moves
-> were applied.
+> Status: snapshot taken after the `chore/restructure` cleanup.
+> All business-logic modules now live in the **`ddn/`** package.
+> The Flask entry point (`flask_app.py`) and the legacy admin app
+> (`app.py`) stay at the repository root.
 
 ---
 
@@ -16,21 +17,26 @@ This document is the working map of the codebase. Pair it with the
                      │       flask_app.py      │  ← only Flask entry point in production
                      └────────────┬────────────┘
                                   │ (renders templates/, serves static/)
+                                  │ from ddn import ...
+                                  ▼
+                     ┌─────────────────────────┐
+                     │       ddn/  package     │
+                     └────────────┬────────────┘
    ┌──────────────┬───────────────┼───────────────┬──────────────┐
    ▼              ▼               ▼               ▼              ▼
-storage.py    excel_export.py   geo.py         mailer.py      ocr.py
-(SQLite)      (DDN .xlsx)       (geo+routing)  (SMTP)         (Tesseract)
+storage       excel_export      geo            mailer          ocr
+(SQLite)      (DDN .xlsx)       (geo+routing)  (SMTP)          (Tesseract)
 
                                   │
                        VN / Software-VN pipeline
                                   │
    ┌────────────────────┬─────────┴─────────┬──────────────────┐
    ▼                    ▼                   ▼                  ▼
-vn_parser.py    software_vn_parser.py   vn_to_gpp.py     gpp_engine.py
-(read VN)       (read Software-VN)      (classify +      (xlwings → run
-                                         map → cells)     GPP formulas)
+vn_parser       software_vn_parser     vn_to_gpp          gpp_engine
+(read VN)       (read Software-VN)     (classify +        (xlwings → run
+                                        map → cells)       GPP formulas)
 
-                       gpp_integration.py  ──▶  gpp_link/
+                       gpp_integration  ──▶  gpp_link/  (NOT in ddn package)
                                                 ├─ standalone.py   (CLI)
                                                 ├─ webservice.py   (separate Flask app)
                                                 ├─ excel_updater.py
@@ -126,13 +132,14 @@ parser `software_vn_parser`.
 These are the places where an "innocent" refactor most often breaks
 something:
 
-1. **`__file__`-relative paths**
-   - `storage.py`, `flask_app.py`, `gpp_engine.py`, `gpp_integration.py`,
-     `gpp_link/config.py` all derive `BASE_DIR` from their own
-     location. If any of them is moved into a package, these paths
-     point to the wrong directory.
-   - Mitigation in Phase B: introduce a single `ddn/_paths.py` and
-     import `BASE_DIR`, `DATA_DIR`, `OUTPUT_DIR` from there.
+1. **`__file__`-relative paths** — RESOLVED in Phase B.
+   - All `ddn/` modules now import `BASE_DIR`, `DATA_DIR`, etc. from
+     `ddn/_paths.py`. To add new persistent files, extend that module
+     instead of using `Path(__file__).resolve().parent`.
+   - `flask_app.py` keeps its own `BASE_DIR` (used only for the
+     `data/logos/` folder lookup); fine because it lives at repo root.
+   - `gpp_link/config.py` keeps its self-relative path; fine because
+     `gpp_link/` is its own self-contained sub-app.
 
 2. **Silent optional imports** in `flask_app.py`
    - The `try: import vn_parser ... except: vn_parser = None` blocks
@@ -161,14 +168,15 @@ something:
 
 ---
 
-## 6. Suggested Phase B restructure (NOT yet applied)
+## 6. Phase B restructure (APPLIED)
 
-If/when behaviour-preserving refactor is approved:
+The restructure described below was completed:
 
 ```
 DDN_DIMinfra_New/
-├─ flask_app.py                # stays at root (entry point)
-├─ ddn/                        # new package
+├─ flask_app.py                # entry point (stays at root)
+├─ app.py                      # legacy admin (stays at root)
+├─ ddn/                        # application package
 │  ├─ __init__.py
 │  ├─ _paths.py                # BASE_DIR / DATA_DIR / OUTPUT_DIR (one source)
 │  ├─ storage.py
@@ -176,22 +184,23 @@ DDN_DIMinfra_New/
 │  ├─ mailer.py
 │  ├─ ocr.py
 │  ├─ geo.py
-│  ├─ parsers/
-│  │  ├─ vn_parser.py
-│  │  └─ software_vn_parser.py
-│  └─ gpp/
-│     ├─ engine.py             # was gpp_engine.py
-│     ├─ integration.py        # was gpp_integration.py
-│     └─ vn_to_gpp.py
-├─ gpp_link/                   # leave alone (it is its own self-contained subapp)
+│  ├─ vn_parser.py
+│  ├─ software_vn_parser.py
+│  ├─ vn_to_gpp.py
+│  ├─ gpp_engine.py
+│  └─ gpp_integration.py
+├─ gpp_link/                   # left untouched (its own self-contained sub-app)
 ├─ templates/   static/   data/   output/   docs/   scripts/   tools/
 └─ ...
 ```
 
-Required follow-up edits in Phase B:
+Import conventions inside the package:
 
-* `flask_app.py` imports → `from ddn import storage, geo, mailer, ocr, excel_export`
-* `vn_to_gpp.py` → `from ddn import geo` and `from ddn.parsers import vn_parser`
-* Replace every `Path(__file__).resolve().parent / "data"` with
-  `from ddn._paths import DATA_DIR`.
-* Smoke-test every route after the move.
+* `flask_app.py` → `from ddn import storage, geo, mailer, ocr, excel_export`
+  (and the optional `try / except ImportError` blocks for the GPP/VN
+  modules use the same `from ddn import …` form).
+* Inter-module: `from . import geo` and `from .vn_parser import …`
+  inside `ddn/vn_to_gpp.py`.
+* Filesystem paths: `from ._paths import DATA_DIR, …` — never
+  `Path(__file__).resolve().parent`.
+
