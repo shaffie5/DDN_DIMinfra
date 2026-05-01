@@ -683,13 +683,10 @@ def map_plant(plant: VNPlant) -> MappingResult:
             continue
         gpp_row = slot_list.pop(0)
         mode_gpp, energy_gpp = map_transport(comp.mode)
-        # RAP distance is the haul from the milling/recycling site to
-        # the asphalt plant.  This depends on which RAP stockpile the
-        # operator actually uses on the day, so it cannot be derived
-        # from the VN file alone.  Force manual entry.
+        # RAP distance is now estimated automatically like other categories.
         if cat == "rap":
-            dist, method = None, "manual_required"
-            manual = True
+            dist, method = _compute_distance(plant_pt, comp.origin, mode_gpp)
+            manual = False
         elif _is_onsite_origin(comp.origin):
             # On-site (origin = Productieproces).  Keep "Fill Transport"
             # with a token 0.02 km on-site haul so the GPP tool's

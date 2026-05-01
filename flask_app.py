@@ -854,6 +854,35 @@ def vn_preview(plant_index: int):
 
 @app.route("/gpp/vn/preview/<int:plant_index>/edit", methods=["POST"])
 def vn_preview_edit(plant_index: int):
+        # Handle manual quay entry for guaranteed accuracy
+        if request.form.get("add_manual_quay"):
+            quay_origin = (request.form.get("manual_quay_origin") or "").strip()
+            quay_lat = request.form.get("manual_quay_lat")
+            quay_lon = request.form.get("manual_quay_lon")
+            if quay_origin and quay_lat and quay_lon:
+                try:
+                    quay_lat = float(quay_lat)
+                    quay_lon = float(quay_lon)
+                    # Load or create waterway_terminals.json
+                    quay_path = Path(__file__).resolve().parent / "data" / "waterway_terminals.json"
+                    if quay_path.exists():
+                        with quay_path.open("r", encoding="utf-8") as f:
+                            quay_data = json.load(f)
+                    else:
+                        quay_data = {}
+                    # Don't overwrite comments or format keys
+                    if quay_origin.lower() not in [k.lower() for k in quay_data.keys() if not k.startswith("_")]:
+                        quay_data[quay_origin] = [quay_lat, quay_lon]
+                        with quay_path.open("w", encoding="utf-8") as f:
+                            json.dump(quay_data, f, indent=2, ensure_ascii=False)
+                        flash(f"Handmatige kade toegevoegd voor '{quay_origin}'.", "success")
+                    else:
+                        flash(f"Kade voor '{quay_origin}' bestaat al.", "warning")
+                except Exception as e:
+                    flash(f"Fout bij toevoegen van kade: {e}", "error")
+            else:
+                flash("Vul alle velden in voor een handmatige kade.", "error")
+            return redirect(url_for("vn_preview", plant_index=plant_index))
     """Apply manual herkomst / aanvoer-per overrides and re-render."""
     if not session_has("vn_data") or vn_parser is None or vn_to_gpp is None:
         flash("Sessiegegevens verlopen. Upload het VN-bestand opnieuw.", "error")
