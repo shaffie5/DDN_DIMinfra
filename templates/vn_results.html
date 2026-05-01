@@ -35,7 +35,7 @@
       <div class="card-body">
         <h6 class="text-muted">Climate change — totaal</h6>
         <h2 class="text-primary">
-          {{ "%.3e"|format(cc_ns.total) if cc_ns.has_value else "—" }}
+          {{ "%.1f"|format(cc_ns.total) if cc_ns.has_value else "—" }}
         </h2>
         <small>kg CO₂-eq / ton (som over levenscyclus)</small>
       </div>
@@ -144,10 +144,10 @@
     <tr>
       <td><strong>{{ row.category }}</strong></td>
       {% for key, val in row.items() if key != "category" %}
-        <td>{{ "%.3e"|format(val) if val is not none else "—" }}</td>
+        <td>{{ "%.1f"|format(val) if val is not none else "—" }}</td>
       {% endfor %}
       <td class="table-secondary">
-        <strong>{{ "%.3e"|format(ns.total) if ns.has_value else "—" }}</strong>
+        <strong>{{ "%.1f"|format(ns.total) if ns.has_value else "—" }}</strong>
       </td>
     </tr>
     {% endfor %}

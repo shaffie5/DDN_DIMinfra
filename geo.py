@@ -395,32 +395,177 @@ def find_nearest_quay(
 ) -> "GeoPoint | None":
     """Find the nearest inland-waterway loading/unloading quay to ``pt``.
 
-    Queries Overpass for OSM features tagged as quays / docks / piers /
-    ports / harbours within ``radius_km`` (default
-    ``QUAY_SEARCH_RADIUS_KM``, 20 km) and returns the closest one as a
-    :class:`GeoPoint`, or ``None`` if nothing is found.
+    Strategy:
+      1. Manual overrides in :file:`data/waterway_terminals.json` win
+         when within ``radius_km``.
+      2. Otherwise query Overpass for nearby OSM features tagged as
+         quays / docks / piers / harbours within ``radius_km`` (default
+         :data:`QUAY_SEARCH_RADIUS_KM`, 20 km).
+      3. As a last resort snap to the nearest navigable waterway node
+         (canal / river / fairway) within the same radius — useful at
+         locations that have a usable bank but no explicit quay tag.
 
-    Results are cached on disk per (lat, lon, radius) tuple so repeated
-    lookups for the same quarry/plant never re-query Overpass.
+    Results are cached on disk per (lat, lon, radius) tuple.
+    Returns ``None`` if nothing is within the radius.
     """
     if not _is_valid_lat_lon(pt.lat, pt.lon):
         return None
-    # OFFLINE MODE: Only use cached/manual quay data. Try manual overrides first.
-    # Try to find the nearest quay from waterway_terminals.json
+    snap_radius = radius_km if radius_km is not None else QUAY_SEARCH_RADIUS_KM
+
+    # 1) Manual overrides.
     overrides = _load_waterway_overrides()
-    best = None
-    best_dist = float("inf")
+    best_override: GeoPoint | None = None
+    best_override_dist = float("inf")
     for label, (lat, lon) in overrides.items():
         d = haversine_km(pt, GeoPoint(lat=lat, lon=lon))
-        if d < best_dist:
-            best_dist = d
-            best = GeoPoint(lat=lat, lon=lon, label=label)
-    # Only snap if within 10 km (or radius_km if provided)
-    snap_radius = radius_km if radius_km is not None else 10
-    if best is not None and best_dist < snap_radius:
-        return best
-    log.warning(f"No quay within {snap_radius} km for {pt}. Location may be outside cached region. Fallback to haversine/manual.")
-    return None
+        if d < best_override_dist:
+            best_override_dist = d
+            best_override = GeoPoint(lat=lat, lon=lon, label=label)
+    if best_override is not None and best_override_dist <= snap_radius:
+        return best_override
+
+    if OFFLINE_MODE:
+        log.warning(
+            "No manual quay within %.1f km for %s and OFFLINE_MODE is set; "
+            "skipping Overpass lookup.", snap_radius, pt,
+        )
+        return None
+
+    # 2) Overpass quay/dock/harbour query, cached on disk.
+    cache = _quay_cache_path(pt.lat, pt.lon, snap_radius)
+    if cache.exists():
+        try:
+            cached = json.loads(cache.read_text(encoding="utf-8"))
+            if cached.get("hit"):
+                return GeoPoint(
+                    lat=float(cached["lat"]), lon=float(cached["lon"]),
+                    label=cached.get("label") or "Quay (osm)",
+                )
+            if cached.get("hit") is False:
+                # Negative cache: known absence of any quay; fall through
+                # to the waterway-snap fallback below before giving up.
+                pass
+            else:
+                return None
+        except Exception:
+            pass
+
+    radius_m = int(snap_radius * 1000)
+    query = f"""
+[out:json][timeout:{int(OVERPASS_TIMEOUT_S)}];
+(
+  node["waterway"="dock"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["waterway"="dock"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  node["man_made"~"^(pier|quay|wharf|mooring)$"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["man_made"~"^(pier|quay|wharf|mooring)$"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  node["mooring"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["mooring"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  node["industrial"="port"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["industrial"="port"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["landuse"="port"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  node["harbour"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+  way["harbour"](around:{radius_m},{pt.lat:.6f},{pt.lon:.6f});
+);
+out center 50;
+""".strip()
+
+    quay_pt: GeoPoint | None = None
+    try:
+        resp = requests.post(
+            OVERPASS_URL, data={"data": query},
+            headers={
+                "User-Agent": "DDN-DIMinfra/1.0 (quay-finder)",
+                "Accept": "application/json",
+            },
+            timeout=OVERPASS_TIMEOUT_S,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        log.warning("Overpass quay query failed for %s: %s", pt, e)
+        data = None
+
+    if data is not None:
+        best: tuple[float, float, str] | None = None
+        best_dist = float("inf")
+        for el in data.get("elements", []):
+            lat = el.get("lat")
+            lon = el.get("lon")
+            if lat is None or lon is None:
+                center = el.get("center") or {}
+                lat = center.get("lat")
+                lon = center.get("lon")
+            if lat is None or lon is None:
+                continue
+            d = haversine_km(pt, GeoPoint(lat=float(lat), lon=float(lon)))
+            if d < best_dist and d <= snap_radius:
+                tags = el.get("tags") or {}
+                label = (tags.get("name") or tags.get("man_made")
+                         or tags.get("waterway") or tags.get("harbour")
+                         or "Quay")
+                best = (float(lat), float(lon), str(label))
+                best_dist = d
+        if best is not None:
+            quay_pt = GeoPoint(
+                lat=best[0], lon=best[1],
+                label=f"{best[2]} (osm, {best_dist:.1f} km)",
+            )
+
+    # 3) Fallback: snap to the nearest navigable waterway segment
+    # (canal/river/fairway) within the radius.  This rescues bank-side
+    # plants that have no explicit quay tag in OSM.
+    if quay_pt is None:
+        snap = _nearest_waterway_node(pt, snap_radius)
+        if snap is not None:
+            quay_pt = snap
+
+    # Cache (positive or negative) for future calls.
+    try:
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        if quay_pt is not None:
+            cache.write_text(json.dumps({
+                "hit": True, "lat": quay_pt.lat, "lon": quay_pt.lon,
+                "label": quay_pt.label,
+            }), encoding="utf-8")
+        else:
+            cache.write_text(json.dumps({"hit": False}), encoding="utf-8")
+    except OSError as e:
+        log.warning("quay cache write failed: %s", e)
+
+    if quay_pt is None:
+        log.info("No quay within %.1f km for %s", snap_radius, pt)
+    return quay_pt
+
+
+def _nearest_waterway_node(
+    pt: "GeoPoint", radius_km: float,
+) -> "GeoPoint | None":
+    """Snap ``pt`` to the closest point on a navigable waterway.
+
+    Reuses :func:`_fetch_inland_waterways` so the bbox is shared with
+    the waterway-routing cache.  Returns ``None`` if Overpass fails or
+    no waterway node is within ``radius_km``.
+    """
+    deg = max(radius_km / 110.0, 0.05)  # ~110 km per degree latitude
+    lines = _fetch_inland_waterways(
+        pt.lat - deg, pt.lon - deg, pt.lat + deg, pt.lon + deg,
+    )
+    if not lines:
+        return None
+    best: tuple[float, float] | None = None
+    best_dist = float("inf")
+    for line in lines:
+        for lat, lon in line:
+            d = haversine_km(pt, GeoPoint(lat=lat, lon=lon))
+            if d < best_dist:
+                best_dist = d
+                best = (lat, lon)
+    if best is None or best_dist > radius_km:
+        return None
+    return GeoPoint(
+        lat=best[0], lon=best[1],
+        label=f"Waterway snap (osm, {best_dist:.1f} km)",
+    )
 
 
 def _waterway_cache_key(a: "GeoPoint", b: "GeoPoint", mode: str) -> Path:

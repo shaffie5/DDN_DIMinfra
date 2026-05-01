@@ -1316,10 +1316,18 @@ def _waterway_logistics(
 
     # 1) Resolve loading + unloading quays — manual override wins,
     # otherwise Overpass nearest within QUAY_SEARCH_RADIUS_KM.
+    # The plant's unloading quay gets a larger search radius (50 km)
+    # because asphalt plants are often well inland and rely on a
+    # regional transhipment terminal — the loading quay near the
+    # quarry/source is usually much closer.
+    plant_quay_radius_km = float(os.environ.get(
+        "PLANT_QUAY_SEARCH_RADIUS_KM", "50",
+    ))
     origin_quay = (geo.waterway_terminal_for(c.get("origin"))
                    or geo.find_nearest_quay(origin_pt))
     plant_quay = (geo.waterway_terminal_for(plant_label)
-                  or geo.find_nearest_quay(plant_pt))
+                  or geo.find_nearest_quay(plant_pt,
+                                           radius_km=plant_quay_radius_km))
 
     if origin_quay is None:
         log_rec["warnings"].append(
@@ -1328,7 +1336,7 @@ def _waterway_logistics(
         )
     if plant_quay is None:
         log_rec["warnings"].append(
-            f"Geen loskade gevonden binnen {geo.QUAY_SEARCH_RADIUS_KM:.0f} km "
+            f"Geen loskade gevonden binnen {plant_quay_radius_km:.0f} km "
             f"van {plant_label or 'asfaltcentrale'}; voer afstand handmatig in."
         )
 
