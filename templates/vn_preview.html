@@ -71,6 +71,24 @@
         {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
         {% else %}{{ c.distance_km|round(0)|int }}
         {% endif %}
+        {% if c.transport_legs and c.transport_legs|length > 1 %}
+        <div class="small text-muted mt-1">
+          {% for leg in c.transport_legs %}
+            <div>
+              <span class="badge bg-light text-dark border">{{ leg.mode }}</span>
+              {{ leg.distance_km|round(1) }} km
+            </div>
+          {% endfor %}
+          <div class="fst-italic">
+            Σ {{ c.transport_legs|sum(attribute='distance_km')|round(1) }} km
+            (truck → kade → {{ c.mode_gpp|lower }} → kade → centrale)
+          </div>
+        </div>
+        {% elif c.mode_gpp in ('Barge', 'Ship') and c.distance_km is not none %}
+        <div class="small text-warning mt-1" title="Geen kade-coördinaten gevonden voor herkomst en/of centrale; alleen vaarafstand wordt geteld. Pin de loskades in data/waterway_terminals.json voor een volledige routeberekening.">
+          ⚠ alleen {{ c.mode_gpp|lower }}-leg, geen vrachtwagen-aan/afvoer
+        </div>
+        {% endif %}
       </td>
       <td>
         {% if c.category == 'binder' %}<small class="text-muted">n.v.t.</small>

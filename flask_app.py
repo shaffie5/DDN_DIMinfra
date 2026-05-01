@@ -933,12 +933,20 @@ def vn_preview(plant_index: int):
     mapping.apply_coverage_overrides(coverage)
 
     # Cache on the disk-backed store for the calculate step
-    session_set("vn_mapping", mapping.to_dict())
+    mapping_dict = mapping.to_dict()
+    # Pre-compute multimodal transport legs (truck → barge → truck) so the
+    # preview table can show the actual per-leg breakdown instead of just
+    # the single waterway distance.  Cached on disk for later GPP write.
+    try:
+        _compute_component_legs(mapping_dict)
+    except Exception as e:
+        log.warning("preview leg computation failed: %s", e)
+    session_set("vn_mapping", mapping_dict)
     session["vn_plant_index"] = plant_index
 
     return render_template(
         "vn_preview.html",
-        mapping=mapping.to_dict(),
+        mapping=mapping_dict,
         plant_dict=plants_dicts[plant_index],
     )
 

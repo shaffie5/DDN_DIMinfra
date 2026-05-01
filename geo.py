@@ -118,6 +118,15 @@ def _lookup_name_only(query_key: str) -> tuple[float, float] | None:
         candidates.append(parts[-1])
         # And first part.
         candidates.append(parts[0])
+    # Whitespace-token fallback for "BrandName City" patterns without a
+    # comma (e.g. "Ankersmit Maastricht", "Sibelco Dessel"): try the last
+    # word as the city, then the first word.  Only useful when the input
+    # has no commas — comma-separated inputs are already covered above.
+    if "," not in query_key:
+        ws_parts = query_key.split()
+        if len(ws_parts) > 1:
+            candidates.append(ws_parts[-1])
+            candidates.append(ws_parts[0])
     for cand in candidates:
         if cand in idx:
             return idx[cand]
