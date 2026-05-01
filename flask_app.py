@@ -940,10 +940,18 @@ def vn_preview(plant_index: int):
     session_set("vn_mapping", mapping_dict)
     session["vn_plant_index"] = plant_index
 
+    # Full flat payload that will be written to GPP — exposed for debugging
+    try:
+        cell_payload = mapping.to_cell_payload()
+    except Exception as e:
+        log.warning("to_cell_payload failed: %s", e)
+        cell_payload = {}
+
     return render_template(
         "vn_preview.html",
         mapping=mapping_dict,
         plant_dict=plants_dicts[plant_index],
+        cell_payload=cell_payload,
     )
 
 
@@ -1732,13 +1740,27 @@ def software_vn_preview(plant_index: int):
     coverage = (session_get("svn_coverage") or {}).get(str(plant_index), {})
     mapping.apply_coverage_overrides(coverage)
 
-    session_set("svn_mapping", mapping.to_dict())
+    mapping_dict = mapping.to_dict()
+    # Pre-compute multimodal transport legs so the preview can show
+    # the per-leg breakdown (parity with the VN preview).
+    try:
+        _compute_component_legs(mapping_dict)
+    except Exception as e:
+        log.warning("svn preview leg computation failed: %s", e)
+    session_set("svn_mapping", mapping_dict)
     session["svn_plant_index"] = plant_index
+
+    try:
+        cell_payload = mapping.to_cell_payload()
+    except Exception as e:
+        log.warning("svn to_cell_payload failed: %s", e)
+        cell_payload = {}
 
     return render_template(
         "software_vn_preview.html",
-        mapping=mapping.to_dict(),
+        mapping=mapping_dict,
         plant_dict=plant_dict,
+        cell_payload=cell_payload,
     )
 
 

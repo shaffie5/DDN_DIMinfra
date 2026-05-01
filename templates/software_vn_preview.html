@@ -42,14 +42,20 @@
 {% endif %}
 
 <h4 class="mt-4">Algemene velden</h4>
-<table class="table table-sm">
-  <thead><tr><th>GPP-cel</th><th>Waarde</th></tr></thead>
+<div class="table-responsive">
+<table class="table table-sm table-striped">
+  <thead><tr><th>GPP-cel</th><th>Veld</th><th>Waarde</th></tr></thead>
   <tbody>
-    {% for cell, val in mapping.general_cells.items() %}
-    <tr><td><code>{{ cell }}</code></td><td>{{ val }}</td></tr>
+    {% for row in (mapping.general_labelled or []) %}
+    <tr>
+      <td><code>{{ row.cell }}</code></td>
+      <td>{{ row.label }}</td>
+      <td>{% if row.value is none or row.value == '' %}<span class="text-muted">—</span>{% else %}{{ row.value }}{% endif %}</td>
+    </tr>
     {% endfor %}
   </tbody>
 </table>
+</div>
 
 <h4 class="mt-4">Componenten ({{ mapping.components|length }})</h4>
 <div class="table-responsive">
@@ -77,6 +83,20 @@
         {% if c.distance_km is none %}—
         {% elif c.distance_method == 'onsite' %}<span title="on-site">{{ "%.2f"|format(c.distance_km) }}</span>
         {% else %}{{ "%.1f"|format(c.distance_km) }}
+        {% endif %}
+        {% if c.transport_legs and c.transport_legs|length > 1 %}
+        <div class="small text-muted mt-1">
+          {% for leg in c.transport_legs %}
+            <div>
+              <span class="badge bg-light text-dark border">{{ leg.mode }}</span>
+              {{ leg.distance_km|round(1) }} km
+            </div>
+          {% endfor %}
+          <div class="fst-italic">
+            Σ {{ c.transport_legs|sum(attribute='distance_km')|round(1) }} km
+            (truck → kade → {{ c.mode_gpp|lower }} → kade → centrale)
+          </div>
+        </div>
         {% endif %}
       </td>
       <td>
@@ -126,6 +146,46 @@
 {% with map_data_url = url_for('software_vn_map_data') %}
   {% include '_origins_map.html' %}
 {% endwith %}
+
+{% if mapping.binder_extra %}
+<div class="alert alert-info mt-3">
+  <strong>Bindmiddel (extra info):</strong>
+  <ul class="mb-0 small">
+    {% for k, v in mapping.binder_extra.items() %}
+      <li><code>{{ k }}</code>: {{ v if v is not none and v != '' else '—' }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="mt-4">
+  <button class="btn btn-outline-secondary btn-sm" type="button"
+          data-bs-toggle="collapse" data-bs-target="#fullPayload"
+          aria-expanded="false" aria-controls="fullPayload">
+    <i class="fa fa-bug"></i> Toon volledige GPP-celpayload (debug)
+  </button>
+  <div class="collapse mt-2" id="fullPayload">
+    <p class="small text-muted mb-1">
+      Alle cellen die naar de GPP-tool worden geschreven. Gebruik dit om
+      een validatie-fout terug te koppelen naar de exacte input.
+    </p>
+    <div class="table-responsive" style="max-height: 480px; overflow:auto;">
+    <table class="table table-sm table-striped table-bordered small mb-0">
+      <thead class="table-light sticky-top">
+        <tr><th>Cel</th><th>Waarde</th></tr>
+      </thead>
+      <tbody>
+        {% for cell, val in (cell_payload or {})|dictsort %}
+        <tr>
+          <td><code>{{ cell }}</code></td>
+          <td>{% if val is none or val == '' %}<span class="text-muted">—</span>{% else %}{{ val }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
 
 <form method="post" action="{{ url_for('software_vn_calculate') }}" class="mt-4">
   {% set missing = mapping.needs_manual_distance or [] %}
