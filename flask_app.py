@@ -18,6 +18,7 @@ import random
 import re
 import secrets
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,180 @@ from flask_login import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
+
+# ─────────────────────────────────────────────────────────────────────
+#  Routing bootstrap: .env loader + BRouter auto-spawn + OSRM fallback
+# ─────────────────────────────────────────────────────────────────────
+# Goal: a single `python flask_app.py` brings up everything needed to
+# render real road and waterway routes on the preview map. No manual
+# env vars, no separate terminal, no Docker.
+#
+#   1. Load values from a project-local `.env` (git-ignored).
+#   2. If a local BRouter on :17777 is reachable, use it. Otherwise try
+#      to spawn the bundled BRouter (tools/brouter/brouter-1.7.9 +
+#      tools/jdk + data/brouter/segments) as a daemon subprocess and
+#      wait briefly for it to bind the port.
+#   3. If OSRM_URL points at a local osrm-backend that isn't running,
+#      transparently fall back to the public OSRM demo server so
+#      truck routes still follow real roads.
+
+# (1) .env loader.
+try:
+    _env_path = Path(__file__).resolve().parent / ".env"
+    if _env_path.exists():
+        for _line in _env_path.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if not _line or _line.startswith("#") or "=" not in _line:
+                continue
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+except Exception:
+    pass
+
+
+def _port_open(host: str, port: int, timeout: float = 0.5) -> bool:
+    import socket as _socket
+    try:
+        with _socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def _spawn_brouter(repo_root: Path, port: int = 17777) -> bool:
+    """Best-effort launch of the bundled BRouter HTTP server.
+
+    Returns True if the port becomes reachable within ~12 s. The
+    subprocess is detached (DETACHED_PROCESS on Windows) so it survives
+    a Flask reload, and stdout is redirected to data/brouter.log.
+    """
+    import subprocess as _sp
+
+    jdk_dir = next((p for p in (repo_root / "tools" / "jdk").glob("jdk-*")
+                    if p.is_dir()), None)
+    brouter_dir = next((p for p in (repo_root / "tools" / "brouter").glob("brouter-*")
+                        if p.is_dir()), None)
+    if not jdk_dir or not brouter_dir:
+        return False
+    java = jdk_dir / "bin" / ("java.exe" if os.name == "nt" else "java")
+    jar = next(brouter_dir.glob("brouter-*-all.jar"), None)
+    profs = brouter_dir / "profiles2"
+    cprof = brouter_dir / "customprofiles"
+    segs = repo_root / "data" / "brouter" / "segments"
+    if not (java.exists() and jar and profs.exists() and segs.exists()):
+        return False
+
+    # Make sure our barge profile is in profiles2 (BRouter only loads from there).
+    src_prof = repo_root / "data" / "brouter" / "profiles" / "barge.brf"
+    if src_prof.exists():
+        try:
+            (profs / "barge.brf").write_bytes(src_prof.read_bytes())
+        except Exception:
+            pass
+
+    log_path = repo_root / "data" / "brouter.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        str(java),
+        "-DmaxRunningTime=300",
+        "-Xmx512M",
+        "-cp", str(jar),
+        "btools.server.RouteServer",
+        str(segs), str(profs), str(cprof), str(port), "1",
+    ]
+    try:
+        creationflags = 0
+        if os.name == "nt":
+            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP — survive Flask reload.
+            creationflags = 0x00000008 | 0x00000200
+        with open(log_path, "ab") as logf:
+            _sp.Popen(
+                cmd,
+                stdout=logf, stderr=logf, stdin=_sp.DEVNULL,
+                cwd=str(repo_root),
+                creationflags=creationflags,
+                close_fds=True,
+            )
+    except Exception as e:
+        print(f"[ddn] failed to spawn BRouter: {e}", file=__import__("sys").stderr)
+        return False
+
+    # Wait up to ~12 s for the port to come up.
+    import time as _time
+    for _ in range(24):
+        if _port_open("127.0.0.1", port):
+            return True
+        _time.sleep(0.5)
+    return False
+
+
+# (2) Waterway router (BRouter).
+#
+# Decide whether we need to (re)start a local BRouter:
+#   - BROUTER_URL not set        → try to spawn one.
+#   - BROUTER_URL is local + dead → try to spawn one.
+#   - BROUTER_URL is remote      → trust it, do nothing.
+def _url_is_local(url: str) -> bool:
+    try:
+        from urllib.parse import urlparse
+        return urlparse(url).hostname in ("127.0.0.1", "localhost", "::1")
+    except Exception:
+        return False
+
+
+_brouter_url = os.environ.get("BROUTER_URL", "").strip()
+_brouter_target_port = 17777
+if _brouter_url:
+    try:
+        from urllib.parse import urlparse as _u
+        _brouter_target_port = _u(_brouter_url).port or 17777
+    except Exception:
+        pass
+
+_brouter_needs_spawn = (
+    not _brouter_url
+    or (_url_is_local(_brouter_url)
+        and not _port_open("127.0.0.1", _brouter_target_port))
+)
+
+if _brouter_needs_spawn:
+    _repo_root = Path(__file__).resolve().parent
+    if _spawn_brouter(_repo_root, port=_brouter_target_port):
+        os.environ["BROUTER_URL"] = f"http://127.0.0.1:{_brouter_target_port}"
+        print(f"[ddn] started bundled BRouter on "
+              f"http://127.0.0.1:{_brouter_target_port} (log: data/brouter.log)")
+    else:
+        # Spawn failed (no JDK / no jar / no segments). Don't leave a dead
+        # local URL pointing at nothing — wipe it so geo.py skips BRouter
+        # cleanly and goes straight to Overpass / searoute.
+        if _brouter_url and _url_is_local(_brouter_url):
+            os.environ.pop("BROUTER_URL", None)
+        print("[ddn] BRouter not available — waterway routes will fall back "
+              "to Overpass/searoute. To enable canal routing, run "
+              "scripts/prepare-brouter.ps1 once, then restart.",
+              file=__import__("sys").stderr)
+
+# (3) Road router (OSRM) — fall back to public demo if local OSRM is dead.
+_osrm_url = os.environ.get("OSRM_URL", "").strip()
+
+
+def _osrm_local_dead(url: str) -> bool:
+    try:
+        from urllib.parse import urlparse
+        u = urlparse(url)
+        if u.hostname not in ("127.0.0.1", "localhost", "::1"):
+            return False
+        port = u.port or (443 if u.scheme == "https" else 80)
+        return not _port_open(u.hostname, port)
+    except Exception:
+        return False
+
+
+if _osrm_url and _osrm_local_dead(_osrm_url):
+    print(f"[ddn] OSRM_URL={_osrm_url} not reachable; using public OSRM demo "
+          f"server instead (truck routes will still follow real roads).",
+          file=__import__("sys").stderr)
+    os.environ["OSRM_URL"] = "https://router.project-osrm.org"
 
 from ddn import excel_export, geo, mailer, ocr, storage
 from ddn._paths import WATERWAY_TERMINALS_PATH
@@ -1559,6 +1734,13 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
     left untouched (single-leg behaviour).  Costs nothing extra after
     the user has already opened the preview map for the same plant —
     the underlying waterway/quay queries are disk-cached.
+
+    Per-component work is dispatched to a thread pool because each
+    barge/ship component triggers several blocking HTTP round-trips
+    (geocode, Overpass quay lookup, OSRM truck legs, waterway routing).
+    Doing them sequentially made the "Selecteer & bekijk mapping" step
+    take many seconds on a cold cache; running them in parallel cuts
+    that to roughly the cost of the slowest single component.
     """
     plant_lat = mapping_dict.get("plant_lat")
     plant_lon = mapping_dict.get("plant_lon")
@@ -1570,6 +1752,7 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
     )
     plant_label = mapping_dict.get("plant_location")
 
+    targets: list[dict[str, Any]] = []
     for c in mapping_dict.get("components", []):
         if c.get("mode_gpp") not in ("Barge", "Ship"):
             continue
@@ -1579,12 +1762,18 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
             continue
         if not c.get("origin"):
             continue
+        targets.append(c)
+
+    if not targets:
+        return
+
+    def _work(c: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]] | None]:
         try:
             origin_pt = geo.geocode(c["origin"])
         except Exception:
             origin_pt = None
         if origin_pt is None:
-            continue
+            return c, None
         try:
             _, _, log_rec = _waterway_logistics(
                 c, origin_pt, plant_pt, plant_label,
@@ -1592,7 +1781,7 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
         except Exception as e:
             log.warning("transport-leg computation failed for %s: %s",
                         c.get("name"), e)
-            continue
+            return c, None
 
         legs: list[dict[str, Any]] = []
         pre_km = log_rec.get("pre_truck_km")
@@ -1608,8 +1797,13 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
         if post_km is not None and post_km > 0:
             legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
                          "distance_km": post_km})
-        if legs:
-            c["transport_legs"] = legs
+        return c, (legs or None)
+
+    max_workers = min(8, len(targets))
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        for c, legs in pool.map(_work, targets):
+            if legs:
+                c["transport_legs"] = legs
 
 
 def _write_transport_routes(cell_payload: dict[str, Any], c: dict[str, Any]) -> None:
