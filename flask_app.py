@@ -857,8 +857,11 @@ def api_route_info():
     plant_point = geo.GeoPoint(lat=plant_lat, lon=plant_lon, label="Plant")
     site_point = geo.GeoPoint(lat=site_lat, lon=site_lon, label="Site")
 
-    route = geo.osrm_route_km(plant_point, site_point)
+    # Single OSRM round-trip: geometry response also carries distance &
+    # duration, and osrm_route_geometry now seeds the distance cache so
+    # the follow-up osrm_route_km() returns instantly.
     route_coords = geo.osrm_route_geometry(plant_point, site_point)
+    route = geo.osrm_route_km(plant_point, site_point)
 
     if route:
         distance_km, duration_min = route

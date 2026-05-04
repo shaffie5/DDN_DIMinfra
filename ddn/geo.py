@@ -67,6 +67,12 @@ _NOMINATIM_DISK_CACHE_LOCK = threading.Lock()
 _OSRM_ROUTE_CACHE: dict[tuple[float, float, float, float], tuple[float, float] | None] = {}
 _OSRM_ROUTE_CACHE_LOCK = threading.Lock()
 
+# In-process cache for OSRM route geometries (full polylines).  Same key
+# scheme as _OSRM_ROUTE_CACHE.  Avoids a second HTTP round-trip when the
+# preview map needs both distance and geometry for the same leg.
+_OSRM_GEOM_CACHE: dict[tuple[float, float, float, float], list[tuple[float, float]] | None] = {}
+_OSRM_GEOM_CACHE_LOCK = threading.Lock()
+
 # Tokens that strongly suggest a free-form street address (a Nominatim
 # live lookup will be much more accurate than the GeoNames place
 # centroid for these).
@@ -544,17 +550,39 @@ def osrm_route_geometry(
     """
     if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
         return None
+    cache_key = (round(a.lat, 5), round(a.lon, 5), round(b.lat, 5), round(b.lon, 5))
+    with _OSRM_GEOM_CACHE_LOCK:
+        if cache_key in _OSRM_GEOM_CACHE:
+            cached = _OSRM_GEOM_CACHE[cache_key]
+            if cached is not None:
+                return cached
     data = _osrm_request(a, b, geometry=True, timeout_s=timeout_s)
+    coords: list[tuple[float, float]] | None = None
     if data is not None:
         try:
             geom = data["routes"][0]["geometry"]["coordinates"]
             # GeoJSON returns [lon, lat]; Leaflet expects (lat, lon).
-            return [(float(lat), float(lon)) for lon, lat in geom]
+            coords = [(float(lat), float(lon)) for lon, lat in geom]
+            # Opportunistically populate the distance/duration cache so a
+            # subsequent osrm_route_km() for the same leg is free.
+            try:
+                route0 = data["routes"][0]
+                dist_km = float(route0.get("distance", 0.0)) / 1000.0
+                dur_min = float(route0.get("duration", 0.0)) / 60.0
+                if dist_km > 0:
+                    with _OSRM_ROUTE_CACHE_LOCK:
+                        _OSRM_ROUTE_CACHE.setdefault(cache_key, (dist_km, dur_min))
+            except (KeyError, TypeError, ValueError):
+                pass
         except (KeyError, IndexError, TypeError, ValueError) as e:
             log.warning("osrm_route_geometry: malformed response: %s", e)
-    log.warning("osrm_route_geometry: falling back to straight line for %s -> %s",
-                (a.lat, a.lon), (b.lat, b.lon))
-    return [(a.lat, a.lon), (b.lat, b.lon)]
+    if coords is None:
+        log.warning("osrm_route_geometry: falling back to straight line for %s -> %s",
+                    (a.lat, a.lon), (b.lat, b.lon))
+        coords = [(a.lat, a.lon), (b.lat, b.lon)]
+    with _OSRM_GEOM_CACHE_LOCK:
+        _OSRM_GEOM_CACHE[cache_key] = coords
+    return coords
 
 
 # ─────────────────────────────────────────────────────────────────────
