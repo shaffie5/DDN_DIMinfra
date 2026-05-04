@@ -1908,17 +1908,26 @@ def software_vn_upload_submit():
     session["svn_filename"] = uploaded.filename
     session_set("svn_data", svn_data.to_dict())
 
-    # Auto-warm the geocoder cache for every address in this Software VN.
+    # Auto-warm the geocoder cache and OSRM route cache for every
+    # address in this Software VN so the preview page loads quickly.
     try:
         addrs: list[str] = []
+        route_pairs: list[tuple[str, str]] = []
         for plant in getattr(svn_data, "plants", []) or []:
-            if getattr(plant, "plant_location", None):
-                addrs.append(plant.plant_location)
+            plant_loc = getattr(plant, "plant_location", None)
+            if plant_loc:
+                addrs.append(plant_loc)
+            if getattr(plant, "binder_origin", None) and plant_loc:
+                route_pairs.append((plant.binder_origin, plant_loc))
             for c in getattr(plant, "components", []) or []:
                 origin = getattr(c, "origin", None)
                 if origin:
                     addrs.append(origin)
+                    if plant_loc:
+                        route_pairs.append((origin, plant_loc))
         geo.warm_addresses_async(addrs)
+        if route_pairs:
+            geo.warm_routes_async(route_pairs)
     except Exception:
         pass
 

@@ -59,6 +59,14 @@ _LAST_NOMINATIM_CALL = 0.0
 _NOMINATIM_DISK_CACHE: dict[str, tuple[float, float, str | None]] | None = None
 _NOMINATIM_DISK_CACHE_LOCK = threading.Lock()
 
+# In-process cache for OSRM road-distance results.  Key = (lat_a, lon_a,
+# lat_b, lon_b) rounded to 5 decimal places (~1 m precision).  Value is
+# the (distance_km, duration_min) pair returned by osrm_route_km, or
+# None when OSRM failed and we fell back to haversine (stored so we
+# don't retry a slow failing endpoint repeatedly).
+_OSRM_ROUTE_CACHE: dict[tuple[float, float, float, float], tuple[float, float] | None] = {}
+_OSRM_ROUTE_CACHE_LOCK = threading.Lock()
+
 # Tokens that strongly suggest a free-form street address (a Nominatim
 # live lookup will be much more accurate than the GeoNames place
 # centroid for these).
@@ -500,21 +508,31 @@ def osrm_route_km(a: GeoPoint, b: GeoPoint, timeout_s: float | None = None) -> t
 
     Uses OSRM (public demo server by default, or self-hosted via
     ``OSRM_URL``).  Falls back to haversine when OSRM is unreachable so
-    the UI still gets a number.
+    the UI still gets a number.  Results are cached in-process so
+    repeated calls for the same coordinate pair are free.
     """
     if not (_is_valid_lat_lon(a.lat, a.lon) and _is_valid_lat_lon(b.lat, b.lon)):
         return None
+    cache_key = (round(a.lat, 5), round(a.lon, 5), round(b.lat, 5), round(b.lon, 5))
+    with _OSRM_ROUTE_CACHE_LOCK:
+        if cache_key in _OSRM_ROUTE_CACHE:
+            return _OSRM_ROUTE_CACHE[cache_key]
     data = _osrm_request(a, b, geometry=False, timeout_s=timeout_s)
+    result: tuple[float, float] | None = None
     if data is not None:
         route = data["routes"][0]
         dist_km = float(route.get("distance", 0.0)) / 1000.0
         dur_min = float(route.get("duration", 0.0)) / 60.0
         if dist_km > 0:
-            return (dist_km, dur_min)
-    # Fallback so UI still gets a number when OSRM is unreachable.
-    log.warning("osrm_route_km: falling back to haversine for %s -> %s",
-                (a.lat, a.lon), (b.lat, b.lon))
-    return (haversine_km(a, b), None)
+            result = (dist_km, dur_min)
+    if result is None:
+        # Fallback so UI still gets a number when OSRM is unreachable.
+        log.warning("osrm_route_km: falling back to haversine for %s -> %s",
+                    (a.lat, a.lon), (b.lat, b.lon))
+        result = (haversine_km(a, b), None)
+    with _OSRM_ROUTE_CACHE_LOCK:
+        _OSRM_ROUTE_CACHE[cache_key] = result
+    return result
 
 
 def osrm_route_geometry(
@@ -1181,6 +1199,58 @@ def warm_addresses_async(addresses):
             try: geocode(q)
             except Exception: pass
     th = _t.Thread(target=_run, name='geocode-prewarm', daemon=True)
+    th.start()
+    return th
+
+
+def warm_routes_async(
+    pairs: "list[tuple[str, str]]",
+) -> "threading.Thread | None":
+    """Pre-warm OSRM road-distance cache for a list of (origin, destination)
+    address string pairs.
+
+    Geocodes both ends of each pair (results land in the geocode cache),
+    then fires off OSRM requests in a thread pool so subsequent calls to
+    :func:`osrm_route_km` for the same coordinates return instantly from
+    the in-process cache.
+
+    Fire-and-forget — returns the started thread.  Duplicate pairs and
+    pairs where either address fails geocoding are skipped silently.
+    """
+    import threading as _t
+    from concurrent.futures import ThreadPoolExecutor as _TPE
+
+    if not pairs:
+        return None
+
+    def _run() -> None:
+        # 1) Geocode every unique address sequentially (Nominatim throttle).
+        unique_addrs: set[str] = set()
+        for a, b in pairs:
+            if a: unique_addrs.add(a.strip())
+            if b: unique_addrs.add(b.strip())
+        for addr in unique_addrs:
+            try: geocode(addr)
+            except Exception: pass
+
+        # 2) Fire OSRM requests in parallel — no rate-limit concern here.
+        def _osrm_pair(pair: "tuple[str, str]") -> None:
+            origin_str, dest_str = pair
+            if not origin_str or not dest_str:
+                return
+            try:
+                a_pt = geocode(origin_str)
+                b_pt = geocode(dest_str)
+                if a_pt and b_pt:
+                    osrm_route_km(a_pt, b_pt)
+            except Exception:
+                pass
+
+        n = min(8, len(pairs))
+        with _TPE(max_workers=n) as pool:
+            list(pool.map(_osrm_pair, pairs))
+
+    th = _t.Thread(target=_run, name='routes-prewarm', daemon=True)
     th.start()
     return th
 
