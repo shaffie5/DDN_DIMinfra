@@ -453,16 +453,21 @@ def _logo_b64(filename: str) -> str | None:
     return f"data:{mime};base64,{base64.b64encode(p.read_bytes()).decode()}"
 
 
+# Logos are static on-disk assets (~760 KB total). Reading + base64-encoding
+# them on every request added ~3 s of latency to every page render, so cache
+# the data URIs once at import time.
+_LOGOS_CACHED: list[dict[str, str]] = []
+for _fname, _alt in LOGO_FILES:
+    _uri = _logo_b64(_fname)
+    if _uri:
+        _LOGOS_CACHED.append({"uri": _uri, "alt": _alt})
+
+
 @app.context_processor
 def inject_globals():
-    logos = []
-    for fname, alt in LOGO_FILES:
-        uri = _logo_b64(fname)
-        if uri:
-            logos.append({"uri": uri, "alt": alt})
     return {
         "app_title": APP_TITLE,
-        "logos": logos,
+        "logos": _LOGOS_CACHED,
         "role_labels": ROLE_LABELS,
         "energy_sources": ENERGY_SOURCES,
         "email_enabled": mailer.email_enabled(),
@@ -477,9 +482,9 @@ def _safe_filename(note_id: str) -> str:
 #  Routes — Pages
 # ─────────────────────────────────────────────────────────────────────
 
-@app.before_request
-def _init_storage():
-    storage.init_db()
+# storage.init_db() used to run on every request; do it once at import time
+# so we don't pay the SQLite open/PRAGMA cost per page load.
+storage.init_db()
 
 
 @app.route("/")
@@ -2279,8 +2284,38 @@ def _safe_float(val, default=0.0):
 if __name__ == "__main__":
     storage.init_db()
     _sweep_session_store()
-    app.run(
-        debug=os.getenv("FLASK_DEBUG", "0") == "1",
-        host=os.getenv("DDN_HOST", "127.0.0.1"),
-        port=int(os.getenv("DDN_PORT", "5001")),
-    )
+
+    _host = os.getenv("DDN_HOST", "127.0.0.1")
+    _port = int(os.getenv("DDN_PORT", "5001"))
+    _debug = os.getenv("FLASK_DEBUG", "0") == "1"
+
+    # Prefer waitress over the Werkzeug dev server. Werkzeug's BaseHTTPServer
+    # adds ~2-5 s of latency per request on Windows (reverse-DNS / Defender
+    # scan on each new socket); waitress serves the same handlers in 1-5 ms.
+    # Fall back to the Flask/Werkzeug server only when debug mode is on
+    # (auto-reload + interactive debugger) or waitress isn't installed.
+    _use_waitress = not _debug and os.getenv("DDN_USE_WAITRESS", "1") != "0"
+    if _use_waitress:
+        try:
+            from waitress import serve as _waitress_serve
+            print(f" * Serving with waitress on http://{_host}:{_port}")
+            _waitress_serve(app, host=_host, port=_port,
+                            threads=int(os.getenv("DDN_WAITRESS_THREADS", "8")))
+        except ImportError:
+            print(" * waitress not installed; falling back to Werkzeug dev server "
+                  "(slow on Windows). pip install waitress")
+            _use_waitress = False
+
+    if not _use_waitress:
+        # Werkzeug's dev server calls socket.getfqdn() on the client address
+        # for every request log line. On Windows this can block for several
+        # seconds waiting for a reverse-DNS lookup. Skip the lookup.
+        try:
+            from werkzeug.serving import WSGIRequestHandler
+            WSGIRequestHandler.address_string = (  # type: ignore[method-assign]
+                lambda self: self.client_address[0]
+            )
+        except Exception:
+            pass
+
+        app.run(debug=_debug, host=_host, port=_port, threaded=True)
