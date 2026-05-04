@@ -21,7 +21,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO, cast
 
 from flask import (
     Flask, render_template, request, redirect, url_for,
@@ -261,7 +261,10 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///users.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
-login_manager.login_view = "login"
+# Flask-Login's stub types ``login_view`` as ``None`` only; assignment is
+# the documented public API — silence the type checker rather than
+# fight the stubs.
+login_manager.login_view = "login"  # type: ignore[assignment]
 
 
 class User(UserMixin, db.Model):
@@ -630,7 +633,9 @@ def receive_delivery():
         )
 
     sigs = storage.list_signatures(note["id"])
-    xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs)
+    xlsx_bytes = excel_export.build_delivery_note_xlsx(
+        payload, cast("dict[str, dict[str, Any]]", sigs),
+    )
 
     # Email if configured
     emails = [
@@ -745,7 +750,12 @@ def sign_submit():
     tmp_path.write_bytes(img_bytes)
     os.replace(tmp_path, sig_path)
 
-    storage.upsert_signature(note_id, role, signer_name or None, str(sig_path))
+    # ``role`` was validated against ``ROLE_LABELS`` above, so it is one of
+    # the literal Role values; the type checker can't see that.
+    storage.upsert_signature(
+        note_id, cast(storage.Role, role),
+        signer_name or None, str(sig_path),
+    )
 
     fully_signed = storage.is_fully_signed(note_id)
     if fully_signed:
@@ -755,7 +765,10 @@ def sign_submit():
         sigs = storage.list_signatures(note_id)
         data_dir = BASE_DIR / "data" / "exports"
         out_path = data_dir / _safe_filename(note_id)
-        excel_export.build_delivery_note_xlsx(payload, sigs, output_path=out_path)
+        excel_export.build_delivery_note_xlsx(
+            payload, cast("dict[str, dict[str, Any]]", sigs),
+            output_path=out_path,
+        )
 
     return jsonify({
         "success": True,
@@ -774,7 +787,9 @@ def download_excel(note_id: str):
     payload = note["payload"]
     _migrate_energy_source(payload)
     sigs = storage.list_signatures(note_id)
-    xlsx_bytes = excel_export.build_delivery_note_xlsx(payload, sigs)
+    xlsx_bytes = excel_export.build_delivery_note_xlsx(
+        payload, cast("dict[str, dict[str, Any]]", sigs),
+    )
 
     return send_file(
         io.BytesIO(xlsx_bytes),
@@ -798,7 +813,11 @@ def api_search_locations():
     from geopy.geocoders import Nominatim
     try:
         geolocator = Nominatim(user_agent="ddn_prototype")
-        results = geolocator.geocode(query, exactly_one=False, limit=6)
+        # Sync geopy returns a list[Location]; the typeshed picks up the
+        # async overload first, so help it along.
+        results = cast(
+            list, geolocator.geocode(query, exactly_one=False, limit=6),
+        )
         if not results:
             return jsonify([])
         return jsonify([
@@ -813,12 +832,21 @@ def api_search_locations():
 @app.route("/api/route-info", methods=["POST"])
 def api_route_info():
     data = request.get_json(silent=True) or {}
-    plant_lat = _safe_float(data.get("plant_lat"), None)
-    plant_lon = _safe_float(data.get("plant_lon"), None)
-    site_lat = _safe_float(data.get("site_lat"), None)
-    site_lon = _safe_float(data.get("site_lon"), None)
 
-    if None in (plant_lat, plant_lon, site_lat, site_lon):
+    def _opt_float(v) -> float | None:
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    plant_lat = _opt_float(data.get("plant_lat"))
+    plant_lon = _opt_float(data.get("plant_lon"))
+    site_lat = _opt_float(data.get("site_lat"))
+    site_lon = _opt_float(data.get("site_lon"))
+
+    if plant_lat is None or plant_lon is None or site_lat is None or site_lon is None:
         return jsonify({"error": "Missing coordinates"}), 400
 
     plant_point = geo.GeoPoint(lat=plant_lat, lon=plant_lon, label="Plant")
@@ -856,7 +884,7 @@ def api_ocr_scan():
 
     try:
         raw_text, field_details = ocr.scan_and_extract_detailed(
-            uploaded.stream,
+            cast(BinaryIO, uploaded.stream),
             content_type=uploaded.content_type,
             filename=uploaded.filename,
         )
@@ -881,7 +909,9 @@ def api_push_gpp():
     sigs = storage.list_signatures(note_id)
 
     try:
-        result = gpp_integration.push_to_gpp(payload, sigs)
+        result = gpp_integration.push_to_gpp(
+            payload, cast("dict[str, dict[str, Any]]", sigs),
+        )
         return jsonify({"success": True, "message": result})
     except NotImplementedError:
         return jsonify({"error": "GPP push not yet implemented"}), 501
@@ -1132,15 +1162,21 @@ def vn_preview(plant_index: int):
     coverage = (session_get("vn_coverage") or {}).get(str(plant_index), {})
     mapping.apply_coverage_overrides(coverage)
 
-    # Cache on the disk-backed store for the calculate step
+    # Cache on the disk-backed store for the calculate step.
+    #
+    # NOTE: multimodal transport legs (truck → barge → truck) used to be
+    # precomputed here via ``_compute_component_legs`` so the preview
+    # table could show the per-leg breakdown.  That made the
+    # "Selecteer & bekijk mapping" click block on several blocking HTTP
+    # round-trips per Barge/Ship component (geocode, Overpass quay
+    # lookup, OSRM, BRouter), often many seconds on a cold cache.
+    #
+    # The same waterway pipeline runs anyway when the preview map's
+    # AJAX hits ``vn_map_data`` (which now also persists the resulting
+    # ``transport_legs`` back into the session), and the calculate step
+    # itself calls ``_compute_component_legs`` defensively.  So skipping
+    # it here is a pure latency win without changing the GPP output.
     mapping_dict = mapping.to_dict()
-    # Pre-compute multimodal transport legs (truck → barge → truck) so the
-    # preview table can show the actual per-leg breakdown instead of just
-    # the single waterway distance.  Cached on disk for later GPP write.
-    try:
-        _compute_component_legs(mapping_dict)
-    except Exception as e:
-        log.warning("preview leg computation failed: %s", e)
     session_set("vn_mapping", mapping_dict)
     session["vn_plant_index"] = plant_index
 
@@ -1282,6 +1318,7 @@ def vn_calculate():
     # for Barge/Ship components so the GPP Input sheet receives Route 1/2/3
     # instead of a single under-counted main leg.
     _compute_component_legs(mapping_dict)
+    assert vn_to_gpp is not None  # checked by caller route guard
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
@@ -1342,6 +1379,7 @@ def vn_calculate():
 
 def _vn_plant_from_dict(d: dict[str, Any]):
     """Rebuild a :class:`vn_parser.VNPlant` from its serialised dict."""
+    assert vn_parser is not None  # caller already verified module loaded
     comps = [vn_parser.VNComponent(**c) for c in d.get("components", [])]
     plant_kwargs = {k: v for k, v in d.items() if k != "components"}
     return vn_parser.VNPlant(components=comps, **plant_kwargs)
@@ -1461,6 +1499,16 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
             routes.extend(legs)
             quays.extend(leg_quays)
             logistics.append(log_rec)
+            # Piggy-back the per-leg breakdown onto the component dict
+            # so the preview table can show truck-feeder / barge / truck
+            # rows once the map AJAX response is persisted to the
+            # session.  Skip components with a manual single-distance
+            # override \u2014 they are intentionally single-leg.
+            if not (c.get("manual_distance")
+                    and c.get("distance_km") is not None):
+                derived_legs = _legs_from_log_rec(c, log_rec)
+                if derived_legs:
+                    c["transport_legs"] = derived_legs
         else:
             # Train / No / unknown — straight line fallback.
             routes.append({
@@ -1740,6 +1788,34 @@ def _waterway_logistics(
 _FEEDER_TRUCK_ENERGY = "Diesel_Euro6"
 
 
+def _legs_from_log_rec(
+    c: dict[str, Any], log_rec: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Build a ``transport_legs`` list from a ``_waterway_logistics`` log record.
+
+    Mirrors the leg construction inside ``_compute_component_legs`` so
+    callers that already have a ``log_rec`` (e.g. ``_build_map_payload``)
+    don't have to re-run the waterway pipeline.
+    """
+    if not log_rec:
+        return []
+    legs: list[dict[str, Any]] = []
+    pre_km = log_rec.get("pre_truck_km")
+    if pre_km is not None and pre_km > 0:
+        legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
+                     "distance_km": pre_km})
+    barge_km = log_rec.get("barge_km")
+    if barge_km is not None and barge_km > 0:
+        legs.append({"mode": c["mode_gpp"],
+                     "energy": c.get("energy_gpp") or "Diesel",
+                     "distance_km": barge_km})
+    post_km = log_rec.get("post_truck_km")
+    if post_km is not None and post_km > 0:
+        legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
+                     "distance_km": post_km})
+    return legs
+
+
 def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
     """Mutate every Barge/Ship component in ``mapping_dict`` to attach a
     ``transport_legs`` list of ``{mode, energy, distance_km}`` dicts.
@@ -1797,20 +1873,7 @@ def _compute_component_legs(mapping_dict: dict[str, Any]) -> None:
                         c.get("name"), e)
             return c, None
 
-        legs: list[dict[str, Any]] = []
-        pre_km = log_rec.get("pre_truck_km")
-        if pre_km is not None and pre_km > 0:
-            legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
-                         "distance_km": pre_km})
-        barge_km = log_rec.get("barge_km")
-        if barge_km is not None and barge_km > 0:
-            legs.append({"mode": c["mode_gpp"],
-                         "energy": c.get("energy_gpp") or "Diesel",
-                         "distance_km": barge_km})
-        post_km = log_rec.get("post_truck_km")
-        if post_km is not None and post_km > 0:
-            legs.append({"mode": "Truck", "energy": _FEEDER_TRUCK_ENERGY,
-                         "distance_km": post_km})
+        legs = _legs_from_log_rec(c, log_rec)
         return c, (legs or None)
 
     max_workers = min(8, len(targets))
@@ -1863,7 +1926,14 @@ def _write_transport_routes(cell_payload: dict[str, Any], c: dict[str, Any]) -> 
 def vn_map_data():
     if not session_has("vn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    payload = _build_map_payload(session_get("vn_mapping"))
+    mapping_dict = session_get("vn_mapping")
+    payload = _build_map_payload(mapping_dict)
+    # ``_build_map_payload`` enriches Barge/Ship components with a
+    # ``transport_legs`` breakdown derived from the same waterway
+    # pipeline it just ran.  Persist back so the calculate step (and a
+    # subsequent preview reload) can reuse it without redoing the
+    # network calls.
+    session_set("vn_mapping", mapping_dict)
     log.info("vn_map_data: plant=%s origins=%d routes=%d",
              payload.get("plant"), len(payload.get("origins") or []),
              len(payload.get("routes") or []))
@@ -1874,7 +1944,9 @@ def vn_map_data():
 def software_vn_map_data():
     if not session_has("svn_mapping"):
         return jsonify({"error": "no mapping in session"}), 404
-    payload = _build_map_payload(session_get("svn_mapping"))
+    mapping_dict = session_get("svn_mapping")
+    payload = _build_map_payload(mapping_dict)
+    session_set("svn_mapping", mapping_dict)
     log.info("software_vn_map_data: plant=%s origins=%d routes=%d",
              payload.get("plant"), len(payload.get("origins") or []),
              len(payload.get("routes") or []))
@@ -1980,19 +2052,16 @@ def software_vn_preview(plant_index: int):
     comps = [software_vn_parser.SVNComponent(**c) for c in plant_dict.get("components", [])]
     plant_kwargs = {k: v for k, v in plant_dict.items() if k != "components"}
     plant = software_vn_parser.SVNPlant(components=comps, **plant_kwargs)
-    mapping = vn_to_gpp.map_plant(plant)
+    # SVNPlant is duck-compatible with VNPlant for ``map_plant`` purposes.
+    mapping = vn_to_gpp.map_plant(cast(Any, plant))
     manual_dists = (session_get("svn_manual_distances") or {}).get(str(plant_index), {})
     mapping.apply_manual_distances(manual_dists)
     coverage = (session_get("svn_coverage") or {}).get(str(plant_index), {})
     mapping.apply_coverage_overrides(coverage)
 
+    # See note in ``vn_preview`` — leg computation is deferred to the
+    # map AJAX / calculate step so this page renders instantly.
     mapping_dict = mapping.to_dict()
-    # Pre-compute multimodal transport legs so the preview can show
-    # the per-leg breakdown (parity with the VN preview).
-    try:
-        _compute_component_legs(mapping_dict)
-    except Exception as e:
-        log.warning("svn preview leg computation failed: %s", e)
     session_set("svn_mapping", mapping_dict)
     session["svn_plant_index"] = plant_index
 
@@ -2098,6 +2167,7 @@ def software_vn_calculate():
         return redirect(url_for("software_vn_preview",
                                 plant_index=session.get("svn_plant_index", 0)))
     _compute_component_legs(mapping_dict)
+    assert vn_to_gpp is not None  # checked by caller route guard
     cell_payload: dict[str, Any] = dict(mapping_dict.get("general_cells") or {})
     seen_gpp_rows: set[int] = set()
     for c in mapping_dict.get("components", []):
