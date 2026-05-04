@@ -298,6 +298,29 @@ _PUBLIC_ENDPOINTS = {
 
 
 @app.before_request
+def _start_request_timer():
+    # Instrumentation: measure wall-clock time of every request so we can
+    # identify slow endpoints (e.g. the preview / map AJAX after
+    # "Selecteer & bekijk mapping").
+    request._t0 = time.perf_counter()  # type: ignore[attr-defined]
+
+
+@app.after_request
+def _log_request_timing(response):
+    t0 = getattr(request, "_t0", None)
+    if t0 is not None:
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+        # Only log non-trivial requests to keep the log readable.
+        if dt_ms >= 50 or (request.endpoint or "").endswith(
+            ("_preview", "_map_data", "_calculate")
+        ):
+            log.info("REQ %s %s -> %s in %.0f ms",
+                     request.method, request.path,
+                     response.status_code, dt_ms)
+    return response
+
+
+@app.before_request
 def _require_login():
     endpoint = request.endpoint or ""
     if endpoint in _PUBLIC_ENDPOINTS:
@@ -1119,16 +1142,20 @@ def vn_upload_submit():
 
     # Auto-warm the geocoder cache for every address in this upload so
     # subsequent runs (incl. offline) get street-level accuracy for free.
+    # Skip when the overrides table hasn't been loaded yet — otherwise
+    # the background thread races the user's next click against a
+    # multi-hundred-MB JSON parse and the page hangs.
     try:
-        addrs: list[str] = []
-        for plant in getattr(vn_data, "plants", []) or []:
-            if getattr(plant, "plant_location", None):
-                addrs.append(plant.plant_location)
-            for c in getattr(plant, "components", []) or []:
-                origin = getattr(c, "origin", None)
-                if origin:
-                    addrs.append(origin)
-        geo.warm_addresses_async(addrs)
+        if getattr(geo, "_OVERRIDES", None) is not None:
+            addrs: list[str] = []
+            for plant in getattr(vn_data, "plants", []) or []:
+                if getattr(plant, "plant_location", None):
+                    addrs.append(plant.plant_location)
+                for c in getattr(plant, "components", []) or []:
+                    origin = getattr(c, "origin", None)
+                    if origin:
+                        addrs.append(origin)
+            geo.warm_addresses_async(addrs)
     except Exception:
         pass  # never let the warm-up break the upload
 
@@ -1471,11 +1498,17 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
     routes: list[dict[str, Any]] = []
     quays: list[dict[str, Any]] = []
     logistics: list[dict[str, Any]] = []
+    _bmp_t0 = time.perf_counter()
     for c in mapping_dict.get("components", []):
         if not c.get("origin"):
             continue
+        _c_t0 = time.perf_counter()
+        _t_geo0 = time.perf_counter()
         origin_pt = geo.geocode(c["origin"])
+        _t_geo_ms = (time.perf_counter() - _t_geo0) * 1000.0
         if origin_pt is None:
+            log.info("  map-comp %-7s %-30s geocode=%.0fms (no hit, skipped)",
+                     c.get("mode_gpp"), (c.get("origin") or "")[:30], _t_geo_ms)
             continue
         origins.append({
             "name":     c["name"],
@@ -1490,7 +1523,9 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
             continue
 
         if c["mode_gpp"] == "Truck":
+            _t_r0 = time.perf_counter()
             coords = geo.osrm_route_geometry(origin_pt, plant_pt)
+            _t_r_ms = (time.perf_counter() - _t_r0) * 1000.0
             routes.append({
                 "name":   c["name"],
                 "mode":   "Truck",
@@ -1500,10 +1535,19 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
                 "routed_length_km": None,
                 "leg":    "main",
             })
+            log.info("  map-comp Truck   %-30s geocode=%.0fms osrm=%.0fms total=%.0fms",
+                     (c.get("origin") or "")[:30], _t_geo_ms, _t_r_ms,
+                     (time.perf_counter() - _c_t0) * 1000.0)
         elif c["mode_gpp"] in ("Barge", "Ship"):
+            _t_w0 = time.perf_counter()
             legs, leg_quays, log_rec = _waterway_logistics(
                 c, origin_pt, plant_pt, plant_label,
             )
+            _t_w_ms = (time.perf_counter() - _t_w0) * 1000.0
+            log.info("  map-comp %-7s %-30s geocode=%.0fms waterway=%.0fms total=%.0fms",
+                     c["mode_gpp"], (c.get("origin") or "")[:30],
+                     _t_geo_ms, _t_w_ms,
+                     (time.perf_counter() - _c_t0) * 1000.0)
             routes.extend(legs)
             quays.extend(leg_quays)
             logistics.append(log_rec)
@@ -1528,7 +1572,13 @@ def _build_map_payload(mapping_dict: dict[str, Any]) -> dict[str, Any]:
                 "routed_length_km": None,
                 "leg":    "main",
             })
+            log.info("  map-comp %-7s %-30s geocode=%.0fms straight total=%.0fms",
+                     c["mode_gpp"], (c.get("origin") or "")[:30], _t_geo_ms,
+                     (time.perf_counter() - _c_t0) * 1000.0)
 
+    log.info("_build_map_payload: %d components in %.0f ms",
+             len(mapping_dict.get("components", [])),
+             (time.perf_counter() - _bmp_t0) * 1000.0)
     return {
         "plant": {
             "lat":   plant_pt.lat if plant_pt else None,
@@ -2004,24 +2054,28 @@ def software_vn_upload_submit():
 
     # Auto-warm the geocoder cache and OSRM route cache for every
     # address in this Software VN so the preview page loads quickly.
+    # Skip when the overrides table hasn't been loaded yet — otherwise
+    # the background thread races the user's next click against a
+    # multi-hundred-MB JSON parse and the page hangs.
     try:
-        addrs: list[str] = []
-        route_pairs: list[tuple[str, str]] = []
-        for plant in getattr(svn_data, "plants", []) or []:
-            plant_loc = getattr(plant, "plant_location", None)
-            if plant_loc:
-                addrs.append(plant_loc)
-            if getattr(plant, "binder_origin", None) and plant_loc:
-                route_pairs.append((plant.binder_origin, plant_loc))
-            for c in getattr(plant, "components", []) or []:
-                origin = getattr(c, "origin", None)
-                if origin:
-                    addrs.append(origin)
-                    if plant_loc:
-                        route_pairs.append((origin, plant_loc))
-        geo.warm_addresses_async(addrs)
-        if route_pairs:
-            geo.warm_routes_async(route_pairs)
+        if getattr(geo, "_OVERRIDES", None) is not None:
+            addrs: list[str] = []
+            route_pairs: list[tuple[str, str]] = []
+            for plant in getattr(svn_data, "plants", []) or []:
+                plant_loc = getattr(plant, "plant_location", None)
+                if plant_loc:
+                    addrs.append(plant_loc)
+                if getattr(plant, "binder_origin", None) and plant_loc:
+                    route_pairs.append((plant.binder_origin, plant_loc))
+                for c in getattr(plant, "components", []) or []:
+                    origin = getattr(c, "origin", None)
+                    if origin:
+                        addrs.append(origin)
+                        if plant_loc:
+                            route_pairs.append((origin, plant_loc))
+            geo.warm_addresses_async(addrs)
+            if route_pairs:
+                geo.warm_routes_async(route_pairs)
     except Exception:
         pass
 

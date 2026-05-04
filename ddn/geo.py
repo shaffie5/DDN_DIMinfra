@@ -94,6 +94,11 @@ _NAME_INDEX: dict[str, tuple[float, float]] | None = None
 # "Koudekerk-aan-de-Rijn" still match GeoNames "Koudekerk aan den Rijn".
 _NAME_INDEX_NORM: dict[str, tuple[float, float]] | None = None
 
+# Serialises the (very expensive) first parse of geocode_overrides.json
+# so concurrent first-callers don't each independently parse a multi-
+# hundred-MB file and triple the memory / CPU footprint.
+_OVERRIDES_LOAD_LOCK = threading.Lock()
+
 # Country-code preference for ambiguous bare-name lookups (lower index = higher priority).
 COUNTRY_PREFERENCE: tuple[str, ...] = tuple(
     (os.getenv("DDN_GEOCODE_COUNTRY_PREFERENCE")
@@ -138,51 +143,60 @@ def _load_overrides() -> dict[str, tuple[float, float]]:
     earliest country in :data:`COUNTRY_PREFERENCE` wins.
     """
     global _OVERRIDES, _NAME_INDEX, _NAME_INDEX_NORM
+    # Fast path — already loaded.
     if _OVERRIDES is not None:
         return _OVERRIDES
-    out: dict[str, tuple[float, float]] = {}
-    name_best: dict[str, tuple[int, tuple[float, float]]] = {}
-    norm_best: dict[str, tuple[int, tuple[float, float]]] = {}
-    pref_rank = {cc: i for i, cc in enumerate(COUNTRY_PREFERENCE)}
-    fallback_rank = len(COUNTRY_PREFERENCE) + 1
-    if _OVERRIDES_PATH.exists():
-        try:
-            raw = json.loads(_OVERRIDES_PATH.read_text(encoding="utf-8"))
-            for k, v in raw.items():
-                if k.startswith("_"):
-                    continue
-                if not (isinstance(v, (list, tuple)) and len(v) == 2):
-                    continue
-                key = k.strip().lower()
-                try:
-                    coord = (float(v[0]), float(v[1]))
-                except (TypeError, ValueError):
-                    continue
-                out[key] = coord
-                # Build name-only index from "name, cc" keys.
-                if "," in key:
-                    name_part, _, cc_part = key.rpartition(",")
-                    name_part = name_part.strip()
-                    cc_part = cc_part.strip()
-                    if name_part and len(cc_part) == 2:
-                        rank = pref_rank.get(cc_part, fallback_rank)
-                        cur = name_best.get(name_part)
-                        if cur is None or rank < cur[0]:
-                            name_best[name_part] = (rank, coord)
-                        norm = _aggr_norm(name_part)
-                        if norm and norm != name_part:
-                            cur_n = norm_best.get(norm)
-                            if cur_n is None or rank < cur_n[0]:
-                                norm_best[norm] = (rank, coord)
-        except Exception as e:
-            log.warning("Failed to load geocode overrides %s: %s", _OVERRIDES_PATH, e)
-    _OVERRIDES = out
-    _NAME_INDEX = {n: c for n, (_, c) in name_best.items()}
-    # Don't shadow exact name hits with the looser normalised form.
-    _NAME_INDEX_NORM = {n: c for n, (_, c) in norm_best.items() if n not in _NAME_INDEX}
-    log.info("Geocode overrides loaded: %d full keys, %d name-only fallbacks, %d normalised fallbacks",
-             len(out), len(_NAME_INDEX), len(_NAME_INDEX_NORM))
-    return out
+    # Serialise the parse: this file can be hundreds of MB and parsing
+    # it on multiple threads concurrently triples memory + GIL pressure
+    # and can hang the first user request after process start.
+    with _OVERRIDES_LOAD_LOCK:
+        if _OVERRIDES is not None:
+            return _OVERRIDES
+        out: dict[str, tuple[float, float]] = {}
+        name_best: dict[str, tuple[int, tuple[float, float]]] = {}
+        norm_best: dict[str, tuple[int, tuple[float, float]]] = {}
+        pref_rank = {cc: i for i, cc in enumerate(COUNTRY_PREFERENCE)}
+        fallback_rank = len(COUNTRY_PREFERENCE) + 1
+        if _OVERRIDES_PATH.exists():
+            try:
+                raw = json.loads(_OVERRIDES_PATH.read_text(encoding="utf-8"))
+                for k, v in raw.items():
+                    if k.startswith("_"):
+                        continue
+                    if not (isinstance(v, (list, tuple)) and len(v) == 2):
+                        continue
+                    key = k.strip().lower()
+                    try:
+                        coord = (float(v[0]), float(v[1]))
+                    except (TypeError, ValueError):
+                        continue
+                    out[key] = coord
+                    # Build name-only index from "name, cc" keys.
+                    if "," in key:
+                        name_part, _, cc_part = key.rpartition(",")
+                        name_part = name_part.strip()
+                        cc_part = cc_part.strip()
+                        if name_part and len(cc_part) == 2:
+                            rank = pref_rank.get(cc_part, fallback_rank)
+                            cur = name_best.get(name_part)
+                            if cur is None or rank < cur[0]:
+                                name_best[name_part] = (rank, coord)
+                            norm = _aggr_norm(name_part)
+                            if norm and norm != name_part:
+                                cur_n = norm_best.get(norm)
+                                if cur_n is None or rank < cur_n[0]:
+                                    norm_best[norm] = (rank, coord)
+            except Exception as e:
+                log.warning("Failed to load geocode overrides %s: %s", _OVERRIDES_PATH, e)
+        _NAME_INDEX = {n: c for n, (_, c) in name_best.items()}
+        # Don't shadow exact name hits with the looser normalised form.
+        _NAME_INDEX_NORM = {n: c for n, (_, c) in norm_best.items() if n not in _NAME_INDEX}
+        # Publish _OVERRIDES last so other threads either wait on the
+        # lock or see a fully-built triple of (overrides, name, norm).
+        _OVERRIDES = out
+        log.info("Geocode overrides loaded: %d full keys, %d name-only fallbacks, %d normalised fallbacks",
+                 len(out), len(_NAME_INDEX), len(_NAME_INDEX_NORM))
+        return out
 
 
 def _name_index() -> dict[str, tuple[float, float]]:
