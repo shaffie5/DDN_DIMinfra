@@ -928,11 +928,19 @@ SESSION_STORE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _session_user_dir() -> Path:
-    """Return (and lazily create) this user's session-store directory."""
-    user = session.get("user_id")
-    if not user or not _USER_ID_RE.match(str(user)):
-        user = secrets.token_urlsafe(12)
-        session["user_id"] = user
+    """Return (and lazily create) this user's session-store directory.
+
+    When the user is authenticated, the directory is anchored to their
+    database ID so session data survives expiry and re-login.  Anonymous
+    visits fall back to a random cookie-bound token.
+    """
+    if current_user.is_authenticated:
+        user = f"uid{int(current_user.id):05d}"  # e.g. "uid00001" – stable across logins
+    else:
+        user = session.get("user_id")
+        if not user or not _USER_ID_RE.match(str(user)):
+            user = secrets.token_urlsafe(12)
+            session["user_id"] = user
     udir = SESSION_STORE_DIR / user
     udir.mkdir(parents=True, exist_ok=True)
     return udir
@@ -945,8 +953,14 @@ def _safe_session_key(key: str) -> str:
 
 
 def _validated_user_dir() -> Path | None:
-    """Resolve the current user's session dir, only if the cookie token
-    looks valid. Returns None for unknown / forged user_ids."""
+    """Resolve the current user's session dir.
+
+    For authenticated users, returns the stable per-login-ID directory.
+    For anonymous requests, validates the cookie token before resolving.
+    Returns None when no valid identity is available.
+    """
+    if current_user.is_authenticated:
+        return SESSION_STORE_DIR / f"uid{int(current_user.id):05d}"
     user = session.get("user_id")
     if not user or not _USER_ID_RE.match(str(user)):
         return None

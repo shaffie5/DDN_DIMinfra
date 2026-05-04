@@ -9,12 +9,15 @@ from here and the route is occasionally used for ad-hoc usage-log
 inspection.  Run with ``python app.py`` (defaults to port 5000).
 Delete only after confirming :mod:`flask_app` covers the admin needs.
 """
-from flask import Flask, render_template, redirect, url_for, request, session, send_file
+from flask import Flask, render_template, redirect, url_for, request, session, send_file, send_from_directory
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from pathlib import Path
 import io, csv
+
+LOGOS_DIR = Path(__file__).parent / "data" / "logos"
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'replace-this-with-a-secret-key'
@@ -92,6 +95,11 @@ def log_action(username, action, extra=None):
     log = UsageLog(username=username, action=action, session_id=session.get('_id', ''), extra=str(extra) if extra else '')
     db.session.add(log)
     db.session.commit()
+
+@app.route("/data/logos/<path:filename>")
+def data_logos(filename):
+    return send_from_directory(LOGOS_DIR, filename)
+
 
 # --- Add create_note_page route to resolve BuildError ---
 @app.route('/create', methods=['GET'])
